@@ -1,6 +1,6 @@
 [Unit]
 Description=CTF Platform - Capture The Flag Competition Platform
-Documentation=https://github.com/liamluthor/raptorsCTF
+Documentation=https://github.com/liamluthor/ctf_platform
 After=network.target postgresql.service
 Wants=postgresql.service
 
