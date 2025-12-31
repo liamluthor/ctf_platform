@@ -95,12 +95,34 @@ export async function deployContainer(config: DeploymentConfig): Promise<Deploym
     throw new Error(`Unknown deployment type: ${container.deploymentType}`);
   }
 
-  // Create container
+  // Create deployment record FIRST to get deployment ID
+  const deploymentData: InsertContainerDeployment = {
+    containerId: container.id,
+    instanceName,
+    platform: "docker",
+    platformId: "", // Will update after container creation
+    status: "starting",
+    statusMessage: "Creating container",
+    accessUrl: "", // Will update after container creation
+    startedAt: new Date(),
+    deployedBy,
+  };
+
+  const deployment = await storage.createDeployment(deploymentData);
+
+  // Auto-inject BASE_PATH environment variable for web containers
+  const basePathEnvVar = {
+    key: "BASE_PATH",
+    value: `/container/${deployment.id}`,
+  };
+  const allEnvVars = [...envVarMappings, basePathEnvVar];
+
+  // Create container with BASE_PATH included
   const dockerContainer = await containerLifecycle.createContainer({
     imageName,
     containerName: instanceName,
     portMappings,
-    envVars: envVarMappings,
+    envVars: allEnvVars,
     memoryLimit: container.memoryLimit || 512,
     cpuLimit: container.cpuLimit || 256,
   });
@@ -121,20 +143,13 @@ export async function deployContainer(config: DeploymentConfig): Promise<Deploym
   const baseUrl = process.env.BASE_URL || process.env.CONTAINER_ACCESS_BASE_URL || "http://localhost";
   const accessUrl = `${baseUrl}:${hostPorts[0]}`;
 
-  // Create deployment record
-  const deploymentData: InsertContainerDeployment = {
-    containerId: container.id,
-    instanceName,
-    platform: "docker",
+  // Update deployment record with Docker container ID and access URL
+  await storage.updateDeployment(deployment.id, {
     platformId: dockerContainer.id,
     status: "running",
     statusMessage: "Deployment successful",
     accessUrl,
-    startedAt: new Date(),
-    deployedBy,
-  };
-
-  const deployment = await storage.createDeployment(deploymentData);
+  });
 
   // Create port mapping records
   for (const mapping of portMappings) {

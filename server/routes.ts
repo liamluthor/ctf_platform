@@ -1539,6 +1539,60 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
+  // Refresh Docker image (stop deployments, remove image, pull fresh)
+  app.post("/api/admin/containers/:id/refresh-image", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const container = await storage.getContainer(id);
+      if (!container) {
+        return res.status(404).json({ error: "Container not found" });
+      }
+
+      // Get image name
+      const imageName = container.imageName || `${container.name}:latest`;
+
+      // Get all active deployments for this container
+      const allDeployments = await storage.getDeploymentsByContainer(id);
+      const activeDeployments = allDeployments.filter(d => d.status === "running");
+
+      logger.info({ containerId: id, imageName, activeDeployments: activeDeployments.length }, "Refreshing Docker image");
+
+      // Stop all active deployments
+      for (const deployment of activeDeployments) {
+        try {
+          await containerOrchestrator.stopDeployment(deployment.id);
+        } catch (error) {
+          logger.error({ deploymentId: deployment.id, error }, "Failed to stop deployment during image refresh");
+          // Continue even if stop fails
+        }
+      }
+
+      // Import container lifecycle functions
+      const containerLifecycle = await import("./services/container/container-lifecycle");
+
+      // Remove Docker image
+      try {
+        await containerLifecycle.removeImage(imageName, false);
+      } catch (error) {
+        logger.warn({ imageName, error }, "Failed to remove image, continuing with pull");
+        // Continue even if remove fails (image might not exist)
+      }
+
+      // Pull fresh image
+      await containerLifecycle.pullImage(imageName);
+
+      res.json({
+        success: true,
+        message: `Image ${imageName} refreshed successfully`,
+        stoppedDeployments: activeDeployments.length,
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error({ error: errorMessage }, "Failed to refresh Docker image");
+      res.status(500).json({ error: `Failed to refresh image: ${errorMessage}` });
+    }
+  });
+
   // Get all deployments (admin)
   app.get("/api/admin/deployments", requireAdmin, async (_req, res) => {
     try {
