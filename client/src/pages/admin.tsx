@@ -1760,7 +1760,7 @@ function ContainersTab() {
 
   // Deploy container mutation
   const deployMutation = useMutation({
-    mutationFn: async ({ containerId, instanceName }: { containerId: number; instanceName: string }) => {
+    mutationFn: async ({ containerId, instanceName }: { containerId, instanceName: string }) => {
       const res = await fetch(`/api/admin/containers/${containerId}/deploy`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1785,6 +1785,33 @@ function ContainersTab() {
     },
     onError: (error: Error) => {
       toast({ variant: "destructive", title: "Deployment failed", description: error.message });
+    },
+  });
+
+  // Refresh Docker image mutation
+  const refreshImageMutation = useMutation({
+    mutationFn: async (containerId: number) => {
+      const res = await fetch(`/api/admin/containers/${containerId}/refresh-image`, {
+        method: "POST",
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Failed to refresh image");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/deployments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/containers"] });
+      toast({
+        title: "Image refreshed",
+        description: `${data.message}. Stopped ${data.stoppedDeployments} deployment(s).`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({ variant: "destructive", title: "Refresh failed", description: error.message });
     },
   });
 
@@ -2242,6 +2269,37 @@ function ContainersTab() {
                           <Play className="w-4 h-4 mr-1" />
                           Deploy
                         </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={refreshImageMutation.isPending}
+                            >
+                              {refreshImageMutation.isPending ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <RotateCw className="w-4 h-4" />
+                              )}
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Refresh Docker Image</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This will stop all running deployments for "{container.name}", remove the cached Docker image, and pull a fresh copy from the registry. Continue?
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => refreshImageMutation.mutate(container.id)}
+                              >
+                                Refresh Image
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                         <Button
                           variant="outline"
                           size="sm"

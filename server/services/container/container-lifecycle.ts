@@ -197,3 +197,47 @@ export async function checkContainerHealth(containerId: string): Promise<{ healt
     return { healthy: false, status: "unknown" };
   }
 }
+
+/**
+ * Remove a Docker image from the local registry
+ */
+export async function removeImage(imageName: string, force: boolean = false): Promise<void> {
+  try {
+    const docker = getDockerClient();
+    const image = docker.getImage(imageName);
+    await image.remove({ force });
+    console.log("Docker image removed:", imageName);
+  } catch (error: any) {
+    if (error.statusCode === 404) {
+      console.warn(`Image ${imageName} not found, skipping removal`);
+      return;
+    }
+    console.error("Failed to remove Docker image:", error);
+    throw error;
+  }
+}
+
+/**
+ * Pull a Docker image from registry
+ */
+export async function pullImage(imageName: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const docker = getDockerClient();
+
+    docker.pull(imageName, (err: any, stream: any) => {
+      if (err) {
+        console.error("Failed to pull Docker image:", err);
+        return reject(err);
+      }
+
+      docker.modem.followProgress(stream, (err: any, output: any) => {
+        if (err) {
+          console.error("Failed during Docker image pull:", err);
+          return reject(err);
+        }
+        console.log("Docker image pulled successfully:", imageName);
+        resolve();
+      });
+    });
+  });
+}
