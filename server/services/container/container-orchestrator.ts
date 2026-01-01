@@ -109,61 +109,80 @@ export async function deployContainer(config: DeploymentConfig): Promise<Deploym
   };
 
   const deployment = await storage.createDeployment(deploymentData);
+  let dockerContainerId: string | null = null;
 
-  const allEnvVars = [...envVarMappings];
+  try {
+    const allEnvVars = [...envVarMappings];
 
-  // Create container
-  const dockerContainer = await containerLifecycle.createContainer({
-    imageName,
-    containerName: instanceName,
-    portMappings,
-    envVars: allEnvVars,
-    memoryLimit: container.memoryLimit || 512,
-    cpuLimit: container.cpuLimit || 256,
-  });
-
-  // Start container
-  await containerLifecycle.startContainer(dockerContainer.id);
-
-  // Wait a bit for container to start
-  await new Promise((resolve) => setTimeout(resolve, 2000));
-
-  // Get container status
-  const status = await containerLifecycle.getContainerStatus(dockerContainer.id);
-  if (!status) {
-    throw new Error("Failed to get container status after deployment");
-  }
-
-  // Build access URL (using wildcard subdomain with instance name)
-  const accessUrl = `https://${instanceName}.strayerraptors.com`;
-
-  // Update deployment record with Docker container ID and access URL
-  await storage.updateDeployment(deployment.id, {
-    platformId: dockerContainer.id,
-    status: "running",
-    statusMessage: "Deployment successful",
-    accessUrl,
-  });
-
-  // Create port mapping records
-  for (const mapping of portMappings) {
-    await storage.addPortMapping({
-      deploymentId: deployment.id,
-      containerPort: mapping.containerPort,
-      hostPort: mapping.hostPort,
-      protocol: mapping.protocol,
-      serviceName: mapping.serviceName,
+    // Create container
+    const dockerContainer = await containerLifecycle.createContainer({
+      imageName,
+      containerName: instanceName,
+      portMappings,
+      envVars: allEnvVars,
+      memoryLimit: container.memoryLimit || 512,
+      cpuLimit: container.cpuLimit || 256,
     });
+    dockerContainerId = dockerContainer.id;
+
+    // Start container
+    await containerLifecycle.startContainer(dockerContainer.id);
+
+    // Wait a bit for container to start
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    // Get container status
+    const status = await containerLifecycle.getContainerStatus(dockerContainer.id);
+    if (!status) {
+      throw new Error("Failed to get container status after deployment");
+    }
+
+    // Build access URL (using wildcard subdomain with instance name)
+    const accessUrl = `https://${instanceName}.strayerraptors.com`;
+
+    // Update deployment record with Docker container ID and access URL
+    await storage.updateDeployment(deployment.id, {
+      platformId: dockerContainer.id,
+      status: "running",
+      statusMessage: "Deployment successful",
+      accessUrl,
+    });
+
+    // Create port mapping records
+    for (const mapping of portMappings) {
+      await storage.addPortMapping({
+        deploymentId: deployment.id,
+        containerPort: mapping.containerPort,
+        hostPort: mapping.hostPort,
+        protocol: mapping.protocol,
+        serviceName: mapping.serviceName,
+      });
+    }
+
+    console.log(`Container deployed successfully: ${instanceName}`);
+
+    return {
+      deploymentId: deployment.id,
+      platformId: dockerContainer.id,
+      accessUrl,
+      ports: portMappings.map((p) => ({ containerPort: p.containerPort, hostPort: p.hostPort })),
+    };
+  } catch (error) {
+    // Cleanup: remove Docker container if it was created
+    if (dockerContainerId) {
+      try {
+        await containerLifecycle.removeContainer(dockerContainerId, true);
+        console.log(`Cleaned up Docker container ${dockerContainerId} after failed deployment`);
+      } catch (cleanupError) {
+        console.error(`Failed to cleanup Docker container ${dockerContainerId}`, cleanupError);
+      }
+    }
+
+    // Cleanup: delete the deployment record since deployment failed
+    console.error(`Deployment failed for ${instanceName}, cleaning up deployment record`, error);
+    await storage.deleteDeployment(deployment.id);
+    throw error;
   }
-
-  console.log(`Container deployed successfully: ${instanceName}`);
-
-  return {
-    deploymentId: deployment.id,
-    platformId: dockerContainer.id,
-    accessUrl,
-    ports: portMappings.map((p) => ({ containerPort: p.containerPort, hostPort: p.hostPort })),
-  };
 }
 
 /**
