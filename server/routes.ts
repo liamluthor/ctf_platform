@@ -1500,10 +1500,39 @@ export async function registerRoutes(server: Server, app: Express) {
   app.delete("/api/admin/containers/:id", requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+
+      // Check if container exists
+      const container = await storage.getContainer(id);
+      if (!container) {
+        return res.status(404).json({ error: "Container not found" });
+      }
+
+      // Get all deployments for this container
+      const deployments = await storage.getDeploymentsByContainer(id);
+
+      // Stop and remove any running deployments
+      for (const deployment of deployments) {
+        if (deployment.platform === "docker" && deployment.platformId) {
+          try {
+            // Stop the container if running
+            if (deployment.status === "running") {
+              await containerOrchestrator.stopDeployment(deployment.id);
+            }
+            // Remove the container
+            await containerLifecycle.removeContainer(deployment.platformId, true);
+          } catch (error) {
+            logger.warn({ deploymentId: deployment.id, error }, "Failed to cleanup deployment during container deletion");
+            // Continue with deletion even if cleanup fails
+          }
+        }
+      }
+
+      // Delete the container (cascades to deployments, env vars, port mappings, challenge links)
       const success = await storage.deleteContainer(id);
       if (!success) {
         return res.status(404).json({ error: "Container not found" });
       }
+
       res.sendStatus(204);
     } catch (error) {
       logger.error({ error }, "Failed to delete container");
