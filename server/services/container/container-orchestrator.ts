@@ -110,14 +110,9 @@ export async function deployContainer(config: DeploymentConfig): Promise<Deploym
 
   const deployment = await storage.createDeployment(deploymentData);
 
-  // Auto-inject BASE_PATH environment variable for web containers
-  const basePathEnvVar = {
-    key: "BASE_PATH",
-    value: `/container/${deployment.id}`,
-  };
-  const allEnvVars = [...envVarMappings, basePathEnvVar];
+  const allEnvVars = [...envVarMappings];
 
-  // Create container with BASE_PATH included
+  // Create container
   const dockerContainer = await containerLifecycle.createContainer({
     imageName,
     containerName: instanceName,
@@ -139,9 +134,8 @@ export async function deployContainer(config: DeploymentConfig): Promise<Deploym
     throw new Error("Failed to get container status after deployment");
   }
 
-  // Build access URL (using first port)
-  const baseUrl = process.env.BASE_URL || process.env.CONTAINER_ACCESS_BASE_URL || "http://localhost";
-  const accessUrl = `${baseUrl}:${hostPorts[0]}`;
+  // Build access URL (using wildcard subdomain)
+  const accessUrl = `https://${deployment.id}.strayerraptors.com`;
 
   // Update deployment record with Docker container ID and access URL
   await storage.updateDeployment(deployment.id, {

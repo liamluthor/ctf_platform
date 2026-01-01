@@ -1613,13 +1613,10 @@ export async function registerRoutes(server: Server, app: Express) {
         const portMappings = await storage.getPortMappings(deployment.id);
         const primaryServiceName = portMappings[0]?.serviceName;
 
-        const baseUrl = process.env.BASE_URL || "http://localhost:5000";
-
         const linkedChallenges = challengeLinks.map(link => ({
           challengeId: link.challengeId,
           challengeName: link.challenge?.name || `Challenge ${link.challengeId}`,
-          // Use new /container/{deploymentId} route
-          accessUrl: `${baseUrl}/container/${deployment.id}`
+          accessUrl: `https://${deployment.id}.strayerraptors.com`
         }));
 
         return {
@@ -1905,22 +1902,17 @@ export async function registerRoutes(server: Server, app: Express) {
       const portMappings = await storage.getPortMappings(activeDeployment.id);
 
       // Get base URL from environment
-      const baseUrl = process.env.BASE_URL || process.env.CONTAINER_ACCESS_BASE_URL || "http://localhost";
-      const useProxy = baseUrl.startsWith("https://") || process.env.USE_CONTAINER_PROXY === "true";
+      const baseUrl = process.env.BASE_URL || "http://localhost";
 
       // Build access URLs for each exposed port
       const accessUrls = portMappings.map(mapping => ({
         port: mapping.containerPort,
         protocol: mapping.protocol,
         serviceName: mapping.serviceName || `Port ${mapping.containerPort}`,
-        // Use new /container/{deploymentId} route for proxy
-        url: useProxy
-          ? `${baseUrl}/container/${activeDeployment.id}`
-          : `${baseUrl}:${mapping.hostPort}`,
+        // Use wildcard subdomain
+        url: `https://${activeDeployment.id}.strayerraptors.com`,
         // Keep legacy direct port URL for admin panel
-        directUrl: `${baseUrl}:${mapping.hostPort}`,
-        // Proxy path (relative URL)
-        proxyPath: `/container/${activeDeployment.id}`
+        directUrl: `${baseUrl}:${mapping.hostPort}`
       }));
 
       res.json({
