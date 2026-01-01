@@ -1525,6 +1525,24 @@ export async function registerRoutes(server: Server, app: Express) {
         return res.status(400).json({ error: "Instance name required" });
       }
 
+      // Validate instanceName for subdomain usage
+      const reservedNames = ['www', 'null', 'dev', 'ctf', 'containers', 'api', 'admin', 'localhost', 'mail', 'ftp', 'smtp'];
+      const normalizedName = instanceName.toLowerCase().trim();
+
+      if (reservedNames.includes(normalizedName)) {
+        return res.status(400).json({ error: `Instance name '${instanceName}' is reserved and cannot be used` });
+      }
+
+      // Validate format: alphanumeric and hyphens only, must start/end with alphanumeric
+      if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/i.test(instanceName)) {
+        return res.status(400).json({ error: "Instance name must contain only letters, numbers, and hyphens, and must start and end with a letter or number" });
+      }
+
+      // Length validation (DNS subdomain limit is 63 characters)
+      if (instanceName.length > 63) {
+        return res.status(400).json({ error: "Instance name must be 63 characters or less" });
+      }
+
       const result = await containerOrchestrator.deployContainer({
         container,
         instanceName,
@@ -1616,7 +1634,7 @@ export async function registerRoutes(server: Server, app: Express) {
         const linkedChallenges = challengeLinks.map(link => ({
           challengeId: link.challengeId,
           challengeName: link.challenge?.name || `Challenge ${link.challengeId}`,
-          accessUrl: `https://${deployment.id}.strayerraptors.com`
+          accessUrl: `https://${deployment.instanceName}.strayerraptors.com`
         }));
 
         return {
@@ -1909,8 +1927,8 @@ export async function registerRoutes(server: Server, app: Express) {
         port: mapping.containerPort,
         protocol: mapping.protocol,
         serviceName: mapping.serviceName || `Port ${mapping.containerPort}`,
-        // Use wildcard subdomain
-        url: `https://${activeDeployment.id}.strayerraptors.com`,
+        // Use wildcard subdomain with instance name
+        url: `https://${activeDeployment.instanceName}.strayerraptors.com`,
         // Keep legacy direct port URL for admin panel
         directUrl: `${baseUrl}:${mapping.hostPort}`
       }));
@@ -1936,24 +1954,24 @@ export async function registerRoutes(server: Server, app: Express) {
   // ========== INTERNAL NGINX ENDPOINTS ==========
 
   // Internal endpoint for container port lookup (no auth required)
-  // Returns the host port for a given deployment ID
+  // Returns the host port for a given instance name
   // Used by nginx to proxy container requests
   app.get("/api/internal/container-port-lookup", async (req, res) => {
     try {
-      const deploymentId = parseInt(req.headers['x-deployment-id'] as string);
+      const instanceName = req.headers['x-instance-name'] as string;
 
-      if (!deploymentId || isNaN(deploymentId)) {
-        return res.status(400).json({ error: "Missing or invalid deployment ID" });
+      if (!instanceName) {
+        return res.status(400).json({ error: "Missing instance name" });
       }
 
-      // Get deployment
-      const deployment = await storage.getDeployment(deploymentId);
+      // Get deployment by instance name
+      const deployment = await storage.getDeploymentByInstanceName(instanceName);
       if (!deployment || deployment.status !== "running") {
         return res.status(404).json({ error: "Container not found or not running" });
       }
 
       // Get the primary port mapping (first one)
-      const portMappings = await storage.getPortMappings(deploymentId);
+      const portMappings = await storage.getPortMappings(deployment.id);
       if (portMappings.length === 0) {
         return res.status(500).json({ error: "No ports configured for this container" });
       }
@@ -1964,7 +1982,8 @@ export async function registerRoutes(server: Server, app: Express) {
       res.set("X-Backend-Port", primaryPort.toString());
       res.status(200).json({
         success: true,
-        deploymentId,
+        instanceName,
+        deploymentId: deployment.id,
         port: primaryPort
       });
     } catch (error) {
