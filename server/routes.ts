@@ -1637,8 +1637,12 @@ export async function registerRoutes(server: Server, app: Express) {
           accessUrl: `https://${deployment.instanceName}.strayerraptors.com`
         }));
 
+        // Override accessUrl to use instanceName-based URL
+        const correctAccessUrl = `https://${deployment.instanceName}.strayerraptors.com`;
+
         return {
           ...deployment,
+          accessUrl: correctAccessUrl,
           linkedChallenges,
           containerName: container.name
         };
