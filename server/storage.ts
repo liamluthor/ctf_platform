@@ -163,6 +163,7 @@ export interface IStorage {
 
   // Container Deployments
   getDeployment(id: number): Promise<ContainerDeployment | undefined>;
+  getDeploymentByInstanceName(instanceName: string): Promise<ContainerDeployment | undefined>;
   getDeploymentsByContainer(containerId: number): Promise<ContainerDeployment[]>;
   getActiveDeployments(): Promise<ContainerDeployment[]>;
   createDeployment(deployment: InsertContainerDeployment): Promise<ContainerDeployment>;
@@ -696,6 +697,11 @@ export class DatabaseStorage implements IStorage {
   // ========== CONTAINER DEPLOYMENTS ==========
   async getDeployment(id: number): Promise<ContainerDeployment | undefined> {
     const result = await db.select().from(containerDeployments).where(eq(containerDeployments.id, id)).limit(1);
+    return result[0];
+  }
+
+  async getDeploymentByInstanceName(instanceName: string): Promise<ContainerDeployment | undefined> {
+    const result = await db.select().from(containerDeployments).where(eq(containerDeployments.instanceName, instanceName)).limit(1);
     return result[0];
   }
 

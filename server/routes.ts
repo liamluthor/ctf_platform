@@ -1500,10 +1500,39 @@ export async function registerRoutes(server: Server, app: Express) {
   app.delete("/api/admin/containers/:id", requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+
+      // Check if container exists
+      const container = await storage.getContainer(id);
+      if (!container) {
+        return res.status(404).json({ error: "Container not found" });
+      }
+
+      // Get all deployments for this container
+      const deployments = await storage.getDeploymentsByContainer(id);
+
+      // Stop and remove any running deployments
+      for (const deployment of deployments) {
+        if (deployment.platform === "docker" && deployment.platformId) {
+          try {
+            // Stop the container if running
+            if (deployment.status === "running") {
+              await containerOrchestrator.stopDeployment(deployment.id);
+            }
+            // Remove the container
+            await containerLifecycle.removeContainer(deployment.platformId, true);
+          } catch (error) {
+            logger.warn({ deploymentId: deployment.id, error }, "Failed to cleanup deployment during container deletion");
+            // Continue with deletion even if cleanup fails
+          }
+        }
+      }
+
+      // Delete the container (cascades to deployments, env vars, port mappings, challenge links)
       const success = await storage.deleteContainer(id);
       if (!success) {
         return res.status(404).json({ error: "Container not found" });
       }
+
       res.sendStatus(204);
     } catch (error) {
       logger.error({ error }, "Failed to delete container");
@@ -1523,6 +1552,24 @@ export async function registerRoutes(server: Server, app: Express) {
       const { instanceName } = req.body;
       if (!instanceName) {
         return res.status(400).json({ error: "Instance name required" });
+      }
+
+      // Validate instanceName for subdomain usage
+      const reservedNames = ['www', 'null', 'dev', 'ctf', 'containers', 'api', 'admin', 'localhost', 'mail', 'ftp', 'smtp'];
+      const normalizedName = instanceName.toLowerCase().trim();
+
+      if (reservedNames.includes(normalizedName)) {
+        return res.status(400).json({ error: `Instance name '${instanceName}' is reserved and cannot be used` });
+      }
+
+      // Validate format: alphanumeric and hyphens only, must start/end with alphanumeric
+      if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/i.test(instanceName)) {
+        return res.status(400).json({ error: "Instance name must contain only letters, numbers, and hyphens, and must start and end with a letter or number" });
+      }
+
+      // Length validation (DNS subdomain limit is 63 characters)
+      if (instanceName.length > 63) {
+        return res.status(400).json({ error: "Instance name must be 63 characters or less" });
       }
 
       const result = await containerOrchestrator.deployContainer({
@@ -1613,17 +1660,18 @@ export async function registerRoutes(server: Server, app: Express) {
         const portMappings = await storage.getPortMappings(deployment.id);
         const primaryServiceName = portMappings[0]?.serviceName;
 
-        const baseUrl = process.env.BASE_URL || "http://localhost:5000";
-
         const linkedChallenges = challengeLinks.map(link => ({
           challengeId: link.challengeId,
           challengeName: link.challenge?.name || `Challenge ${link.challengeId}`,
-          // Use new /container/{deploymentId} route
-          accessUrl: `${baseUrl}/container/${deployment.id}`
+          accessUrl: `https://${deployment.instanceName}.strayerraptors.com`
         }));
+
+        // Override accessUrl to use instanceName-based URL
+        const correctAccessUrl = `https://${deployment.instanceName}.strayerraptors.com`;
 
         return {
           ...deployment,
+          accessUrl: correctAccessUrl,
           linkedChallenges,
           containerName: container.name
         };
@@ -1905,22 +1953,17 @@ export async function registerRoutes(server: Server, app: Express) {
       const portMappings = await storage.getPortMappings(activeDeployment.id);
 
       // Get base URL from environment
-      const baseUrl = process.env.BASE_URL || process.env.CONTAINER_ACCESS_BASE_URL || "http://localhost";
-      const useProxy = baseUrl.startsWith("https://") || process.env.USE_CONTAINER_PROXY === "true";
+      const baseUrl = process.env.BASE_URL || "http://localhost";
 
       // Build access URLs for each exposed port
       const accessUrls = portMappings.map(mapping => ({
         port: mapping.containerPort,
         protocol: mapping.protocol,
         serviceName: mapping.serviceName || `Port ${mapping.containerPort}`,
-        // Use new /container/{deploymentId} route for proxy
-        url: useProxy
-          ? `${baseUrl}/container/${activeDeployment.id}`
-          : `${baseUrl}:${mapping.hostPort}`,
+        // Use wildcard subdomain with instance name
+        url: `https://${activeDeployment.instanceName}.strayerraptors.com`,
         // Keep legacy direct port URL for admin panel
-        directUrl: `${baseUrl}:${mapping.hostPort}`,
-        // Proxy path (relative URL)
-        proxyPath: `/container/${activeDeployment.id}`
+        directUrl: `${baseUrl}:${mapping.hostPort}`
       }));
 
       res.json({
@@ -1944,24 +1987,24 @@ export async function registerRoutes(server: Server, app: Express) {
   // ========== INTERNAL NGINX ENDPOINTS ==========
 
   // Internal endpoint for container port lookup (no auth required)
-  // Returns the host port for a given deployment ID
+  // Returns the host port for a given instance name
   // Used by nginx to proxy container requests
   app.get("/api/internal/container-port-lookup", async (req, res) => {
     try {
-      const deploymentId = parseInt(req.headers['x-deployment-id'] as string);
+      const instanceName = req.headers['x-instance-name'] as string;
 
-      if (!deploymentId || isNaN(deploymentId)) {
-        return res.status(400).json({ error: "Missing or invalid deployment ID" });
+      if (!instanceName) {
+        return res.status(400).json({ error: "Missing instance name" });
       }
 
-      // Get deployment
-      const deployment = await storage.getDeployment(deploymentId);
+      // Get deployment by instance name
+      const deployment = await storage.getDeploymentByInstanceName(instanceName);
       if (!deployment || deployment.status !== "running") {
         return res.status(404).json({ error: "Container not found or not running" });
       }
 
       // Get the primary port mapping (first one)
-      const portMappings = await storage.getPortMappings(deploymentId);
+      const portMappings = await storage.getPortMappings(deployment.id);
       if (portMappings.length === 0) {
         return res.status(500).json({ error: "No ports configured for this container" });
       }
@@ -1972,7 +2015,8 @@ export async function registerRoutes(server: Server, app: Express) {
       res.set("X-Backend-Port", primaryPort.toString());
       res.status(200).json({
         success: true,
-        deploymentId,
+        instanceName,
+        deploymentId: deployment.id,
         port: primaryPort
       });
     } catch (error) {
