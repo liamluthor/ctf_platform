@@ -66,6 +66,7 @@ export default function TeamPage() {
     onSuccess: () => {
       toast({ title: "Team created successfully!" });
       queryClient.invalidateQueries({ queryKey: [`/api/users/${user?.id}/team`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/teams"] });
       setCreateDialogOpen(false);
       setCreateTeamName("");
     },
@@ -91,6 +92,7 @@ export default function TeamPage() {
     onSuccess: () => {
       toast({ title: "Successfully joined team!" });
       queryClient.invalidateQueries({ queryKey: [`/api/users/${user?.id}/team`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/teams"] });
       setJoinDialogOpen(false);
       setJoinCode("");
     },
@@ -113,6 +115,7 @@ export default function TeamPage() {
     onSuccess: () => {
       toast({ title: "Left team successfully" });
       queryClient.invalidateQueries({ queryKey: [`/api/users/${user?.id}/team`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/teams"] });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -134,6 +137,7 @@ export default function TeamPage() {
     onSuccess: () => {
       toast({ title: "Invite code regenerated" });
       queryClient.invalidateQueries({ queryKey: [`/api/users/${user?.id}/team`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/teams/${team?.id}`] });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
