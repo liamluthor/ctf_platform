@@ -87,9 +87,9 @@ export function DateTimePicker({ value, onChange, placeholder = "Pick a date and
             <div className="text-sm font-medium text-muted-foreground text-center">
               {date ? format(date, "PPP") : "No date selected"}
             </div>
-            <div className="space-y-2">
+            <div className="flex items-center justify-between">
               <Label className="text-sm font-medium">Time</Label>
-              <div className="flex items-center gap-3 justify-end">
+              <div className="flex items-center gap-3">
                 <Clock className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                 <Input
                   type="time"
