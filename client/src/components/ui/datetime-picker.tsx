@@ -18,29 +18,26 @@ export interface DateTimePickerProps {
 }
 
 export function DateTimePicker({ value, onChange, placeholder = "Pick a date and time", className }: DateTimePickerProps) {
-  const [date, setDate] = React.useState<Date | undefined>(
-    value ? (typeof value === 'string' ? new Date(value) : value) : undefined
-  )
+  // Use value prop directly instead of internal state
+  const date = value ? (typeof value === 'string' ? new Date(value) : value) : undefined
+
   const [time, setTime] = React.useState<string>(
     date ? format(date, "HH:mm") : "12:00"
   )
   const [open, setOpen] = React.useState(false)
 
-  // Sync internal state when value prop changes
+  // Update time when date prop changes
   React.useEffect(() => {
-    const newDate = value ? (typeof value === 'string' ? new Date(value) : value) : undefined
-    setDate(newDate)
-    if (newDate) {
-      setTime(format(newDate, "HH:mm"))
+    if (date) {
+      setTime(format(date, "HH:mm"))
     }
-  }, [value])
+  }, [date])
 
   const handleDateSelect = (selectedDate: Date | undefined) => {
     if (selectedDate) {
       const [hours, minutes] = time.split(':').map(Number)
       const newDate = new Date(selectedDate)
       newDate.setHours(hours, minutes)
-      setDate(newDate)
       onChange?.(newDate)
     }
   }
@@ -51,14 +48,12 @@ export function DateTimePicker({ value, onChange, placeholder = "Pick a date and
       const [hours, minutes] = newTime.split(':').map(Number)
       const newDate = new Date(date)
       newDate.setHours(hours, minutes)
-      setDate(newDate)
       onChange?.(newDate)
     }
   }
 
   const handleNowClick = () => {
     const now = new Date()
-    setDate(now)
     setTime(format(now, "HH:mm"))
     onChange?.(now)
     setOpen(false)
