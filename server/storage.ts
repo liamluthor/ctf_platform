@@ -647,10 +647,66 @@ export class DatabaseStorage implements IStorage {
       lastSolve: Date | null;
     }[]
   > {
-    // Get the CTF event to check if it's team-based
+    // Get the CTF event to check if it's team-based and ctf type
     const ctf = await this.getCtfEvent(ctfEventId);
     if (!ctf) return [];
 
+    // For serial CTFs, aggregate from serialStageSolves
+    if (ctf.ctfType === 'serial') {
+      if (ctf.isTeamBased) {
+        // Team-based serial leaderboard
+        const result = await db
+          .select({
+            teamId: serialStageSolves.teamId,
+            teamName: teams.name,
+            score: sql<number>`SUM(${serialStageSolves.points})`.as("score"),
+            solveCount: sql<number>`COUNT(*)`.as("solve_count"),
+            lastSolve: sql<Date>`MAX(${serialStageSolves.solvedAt})`.as("last_solve"),
+          })
+          .from(serialStageSolves)
+          .innerJoin(teams, eq(serialStageSolves.teamId, teams.id))
+          .where(eq(serialStageSolves.ctfEventId, ctfEventId))
+          .groupBy(serialStageSolves.teamId, teams.name)
+          .orderBy(sql`score DESC, last_solve ASC`)
+          .limit(limit ?? 100);
+
+        return result.map((r, i) => ({
+          rank: i + 1,
+          id: r.teamId!,
+          name: r.teamName,
+          score: Number(r.score),
+          solves: Number(r.solveCount),
+          lastSolve: r.lastSolve,
+        }));
+      } else {
+        // Individual serial leaderboard
+        const result = await db
+          .select({
+            userId: serialStageSolves.userId,
+            username: users.username,
+            score: sql<number>`SUM(${serialStageSolves.points})`.as("score"),
+            solveCount: sql<number>`COUNT(*)`.as("solve_count"),
+            lastSolve: sql<Date>`MAX(${serialStageSolves.solvedAt})`.as("last_solve"),
+          })
+          .from(serialStageSolves)
+          .innerJoin(users, eq(serialStageSolves.userId, users.id))
+          .where(eq(serialStageSolves.ctfEventId, ctfEventId))
+          .groupBy(serialStageSolves.userId, users.username)
+          .orderBy(sql`score DESC, last_solve ASC`)
+          .limit(limit ?? 100);
+
+        return result.map((r, i) => ({
+          rank: i + 1,
+          id: r.userId,
+          name: r.username,
+          score: Number(r.score),
+          solves: Number(r.solveCount),
+          lastSolve: r.lastSolve,
+        }));
+      }
+    }
+
+    // For jeopardy CTFs, aggregate from solves (original logic)
     if (ctf.isTeamBased) {
       // Team-based leaderboard
       const result = await db

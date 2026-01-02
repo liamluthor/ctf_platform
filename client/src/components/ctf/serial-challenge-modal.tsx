@@ -101,7 +101,7 @@ export function SerialChallengeModal({ challenge, ctfId, onClose }: SerialChalle
             </div>
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground">
-                Stage {challenge.currentStage || 0} / {challenge.totalStages}
+                {challenge.stagesCompleted || 0} / {challenge.totalStages} completed
               </span>
             </div>
           </div>

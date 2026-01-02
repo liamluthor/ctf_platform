@@ -44,8 +44,9 @@ export function SerialChallengesView({ ctfId }: SerialChallengesViewProps) {
     <>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {challenges.map((challenge) => {
+          const stagesCompleted = challenge.stagesCompleted || 0;
           const progressPercent = challenge.totalStages > 0
-            ? (challenge.currentStage / challenge.totalStages) * 100
+            ? (stagesCompleted / challenge.totalStages) * 100
             : 0;
 
           return (
@@ -69,7 +70,7 @@ export function SerialChallengesView({ ctfId }: SerialChallengesViewProps) {
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Progress</span>
                   <span className="font-medium">
-                    {challenge.currentStage || 0} / {challenge.totalStages} Stages
+                    {stagesCompleted} / {challenge.totalStages} Stages
                   </span>
                 </div>
 

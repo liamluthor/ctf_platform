@@ -2108,9 +2108,21 @@ export async function registerRoutes(server: Server, app: Express) {
       const challengesWithProgress = await Promise.all(
         serialChallenges.map(async (challenge) => {
           const progress = await storage.getSerialProgress(userId, challenge.id);
+
+          // Calculate stages completed by counting actual solves
+          let stagesCompleted = 0;
+          if (progress) {
+            const stages = await storage.getStagesBySerialChallenge(challenge.id);
+            const solves = await Promise.all(
+              stages.map(stage => storage.getUserStageSolve(userId, stage.id))
+            );
+            stagesCompleted = solves.filter(solve => solve !== undefined).length;
+          }
+
           return {
             ...challenge,
-            currentStage: progress?.currentStage || 0,
+            currentStage: progress?.currentStage || 1,
+            stagesCompleted,
             totalPointsEarned: progress?.totalPointsEarned || 0,
             isComplete: progress?.isComplete || false,
             isUnlocked: progress ? true : false,
