@@ -6,8 +6,8 @@ For a fresh Ubuntu 22.04/24.04 server:
 
 ```bash
 # Clone repository
-git clone https://github.com/YOUR_USERNAME/raptorsCTF.git
-cd raptorsCTF
+git clone https://github.com/liamluthor/ctf_platform.git
+cd ctf_platform
 
 # Run automated setup
 sudo ./scripts/setup-production.sh
