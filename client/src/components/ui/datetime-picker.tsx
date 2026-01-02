@@ -38,9 +38,10 @@ export function DateTimePicker({ value, onChange, placeholder = "Pick a date and
   const handleDateSelect = (selectedDate: Date | undefined) => {
     if (selectedDate) {
       const [hours, minutes] = time.split(':').map(Number)
-      selectedDate.setHours(hours, minutes)
-      setDate(selectedDate)
-      onChange?.(selectedDate)
+      const newDate = new Date(selectedDate)
+      newDate.setHours(hours, minutes)
+      setDate(newDate)
+      onChange?.(newDate)
     }
   }
 
