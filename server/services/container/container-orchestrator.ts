@@ -300,3 +300,52 @@ export async function getDeploymentStatus(deploymentId: number): Promise<{
     };
   }
 }
+
+/**
+ * List all Docker containers (including orphans)
+ */
+export async function listAllDockerContainers(): Promise<Array<{
+  id: string;
+  name: string | null;
+  image: string;
+  status: string;
+  state: string;
+  created: number;
+}>> {
+  const docker = await import("dockerode");
+  const dockerClient = new docker.default();
+
+  const containers = await dockerClient.listContainers({ all: true });
+
+  return containers.map(container => ({
+    id: container.Id,
+    name: container.Names?.[0]?.replace(/^\//, '') || null,
+    image: container.Image,
+    status: container.Status,
+    state: container.State,
+    created: container.Created,
+  }));
+}
+
+/**
+ * Remove a Docker container by ID
+ */
+export async function removeDockerContainer(containerId: string): Promise<void> {
+  const docker = await import("dockerode");
+  const dockerClient = new docker.default();
+
+  const container = dockerClient.getContainer(containerId);
+
+  try {
+    // Stop the container if it's running
+    const info = await container.inspect();
+    if (info.State.Running) {
+      await container.stop();
+    }
+  } catch (error) {
+    // Container might already be stopped, continue with removal
+  }
+
+  // Remove the container
+  await container.remove({ force: true });
+}

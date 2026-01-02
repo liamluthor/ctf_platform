@@ -6,7 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { usePlatformSettings, hexToHSL, hslToHex } from "@/hooks/use-platform-settings";
 import { queryClient } from "@/lib/queryClient";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -71,6 +71,7 @@ import {
   Play,
   Square,
   RotateCw,
+  RefreshCw,
   ExternalLink,
   Terminal,
   Activity,
@@ -1692,6 +1693,16 @@ function ContainersTab() {
     },
   });
 
+  // Fetch Docker containers
+  const { data: dockerContainers = [], isLoading: dockerLoading, refetch: refetchDockerContainers } = useQuery({
+    queryKey: ["/api/admin/docker/containers"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/docker/containers", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch Docker containers");
+      return res.json();
+    },
+  });
+
   // Create/Update container mutation
   const containerMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -1842,6 +1853,47 @@ function ContainersTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/deployments"] });
       toast({ title: "Deployment restarted", description: "Deployment has been restarted successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    },
+  });
+
+  // Cleanup orphaned containers mutation
+  const cleanupOrphansMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/admin/docker/cleanup-orphans", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to cleanup orphaned containers");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/docker/containers"] });
+      toast({
+        title: "Cleanup complete",
+        description: data.message,
+      });
+    },
+    onError: (error: Error) => {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    },
+  });
+
+  // Remove single Docker container mutation
+  const removeDockerContainerMutation = useMutation({
+    mutationFn: async (containerId: string) => {
+      const res = await fetch(`/api/admin/docker/containers/${containerId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to remove Docker container");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/docker/containers"] });
+      toast({ title: "Container removed", description: "Docker container has been removed successfully" });
     },
     onError: (error: Error) => {
       toast({ variant: "destructive", title: "Error", description: error.message });
@@ -2426,6 +2478,116 @@ function ContainersTab() {
                           </Button>
                         )}
                       </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Docker Containers */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Docker Containers</CardTitle>
+            <CardDescription>All Docker containers on this host (orphans highlighted in red)</CardDescription>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetchDockerContainers()}
+              disabled={dockerLoading}
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${dockerLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => cleanupOrphansMutation.mutate()}
+              disabled={cleanupOrphansMutation.isPending || dockerContainers.filter((c: any) => c.isOrphan).length === 0}
+            >
+              {cleanupOrphansMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              <Trash2 className="w-4 h-4 mr-2" />
+              Remove All Orphans ({dockerContainers.filter((c: any) => c.isOrphan).length})
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {dockerLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin" />
+            </div>
+          ) : dockerContainers.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              No Docker containers found
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Container Name</TableHead>
+                  <TableHead>Image</TableHead>
+                  <TableHead>State</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Container ID</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {dockerContainers.map((container: any) => (
+                  <TableRow
+                    key={container.id}
+                    className={container.isOrphan ? "bg-red-500/10 border-l-4 border-l-red-500" : ""}
+                  >
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-2">
+                        {container.name || "(unnamed)"}
+                        {container.isOrphan && (
+                          <span className="text-xs bg-red-500 text-white px-2 py-0.5 rounded">
+                            ORPHAN
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-xs text-muted-foreground font-mono">
+                        {container.image}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <span className={`text-xs px-2 py-1 rounded ${
+                        container.state === 'running' ? 'bg-green-500/20 text-green-400' :
+                        container.state === 'exited' ? 'bg-gray-500/20 text-gray-400' :
+                        'bg-yellow-500/20 text-yellow-400'
+                      }`}>
+                        {container.state}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-xs text-muted-foreground">
+                        {container.status}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-xs text-muted-foreground font-mono">
+                        {container.id.substring(0, 12)}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {container.isOrphan && (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => removeDockerContainerMutation.mutate(container.id)}
+                          disabled={removeDockerContainerMutation.isPending}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

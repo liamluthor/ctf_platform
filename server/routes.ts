@@ -1750,6 +1750,76 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
+  // Get all Docker containers with orphan status
+  app.get("/api/admin/docker/containers", requireAdmin, async (_req, res) => {
+    try {
+      const dockerContainers = await containerOrchestrator.listAllDockerContainers();
+      const deployments = await storage.getAllDeployments();
+
+      // Create a map of Docker container IDs that are tracked in the database
+      const trackedContainerIds = new Set(
+        deployments.map(d => d.dockerContainerId).filter(Boolean)
+      );
+
+      // Mark containers as orphaned if they're not in the database
+      const containersWithStatus = dockerContainers.map(container => ({
+        ...container,
+        isOrphan: !trackedContainerIds.has(container.id),
+      }));
+
+      res.json(containersWithStatus);
+    } catch (error) {
+      logger.error({ error }, "Failed to list Docker containers");
+      res.status(500).json({ error: "Failed to list Docker containers" });
+    }
+  });
+
+  // Remove orphaned Docker containers
+  app.post("/api/admin/docker/cleanup-orphans", requireAdmin, async (_req, res) => {
+    try {
+      const dockerContainers = await containerOrchestrator.listAllDockerContainers();
+      const deployments = await storage.getAllDeployments();
+
+      const trackedContainerIds = new Set(
+        deployments.map(d => d.dockerContainerId).filter(Boolean)
+      );
+
+      const orphanedContainers = dockerContainers.filter(
+        container => !trackedContainerIds.has(container.id)
+      );
+
+      const removed = [];
+      for (const container of orphanedContainers) {
+        try {
+          await containerOrchestrator.removeDockerContainer(container.id);
+          removed.push(container.name || container.id);
+        } catch (error) {
+          logger.error({ error, containerId: container.id }, "Failed to remove orphaned container");
+        }
+      }
+
+      res.json({
+        message: `Removed ${removed.length} orphaned container(s)`,
+        removed
+      });
+    } catch (error) {
+      logger.error({ error }, "Failed to cleanup orphaned containers");
+      res.status(500).json({ error: "Failed to cleanup orphaned containers" });
+    }
+  });
+
+  // Remove specific Docker container by ID
+  app.delete("/api/admin/docker/containers/:id", requireAdmin, async (req, res) => {
+    try {
+      const containerId = req.params.id;
+      await containerOrchestrator.removeDockerContainer(containerId);
+      res.json({ message: "Container removed successfully" });
+    } catch (error) {
+      logger.error({ error, containerId: req.params.id }, "Failed to remove Docker container");
+      res.status(500).json({ error: "Failed to remove Docker container" });
+    }
+  });
+
   // Get linked containers for a challenge (admin endpoint)
   app.get("/api/admin/challenges/:challengeId/containers", requireAdmin, async (req, res) => {
     try {
