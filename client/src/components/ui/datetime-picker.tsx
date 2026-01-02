@@ -82,9 +82,6 @@ export function DateTimePicker({ value, onChange, placeholder = "Pick a date and
             onSelect={handleDateSelect}
             initialFocus
             className="w-full"
-            modifiersClassNames={{
-              today: "" // Remove default today styling to prevent always highlighting today
-            }}
           />
           <div className="border-t border-white/10 pt-4 space-y-3">
             <Label className="text-sm font-medium">Time</Label>
