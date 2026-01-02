@@ -173,12 +173,16 @@ function CtfEventsTab() {
   });
 
   const resetForm = () => {
+    const now = new Date();
+    const oneWeekLater = new Date();
+    oneWeekLater.setDate(now.getDate() + 7);
+
     setFormData({
       name: "",
       description: "",
       rules: "",
-      startTime: undefined,
-      endTime: undefined,
+      startTime: now,
+      endTime: oneWeekLater,
       isTeamBased: false,
       maxTeamSize: "",
       isPublished: false,
