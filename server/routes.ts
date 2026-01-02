@@ -2139,8 +2139,8 @@ export async function registerRoutes(server: Server, app: Express) {
       const stages = await storage.getStagesBySerialChallenge(serialChallengeId);
       const progress = await storage.getSerialProgress(userId, serialChallengeId);
 
-      // Determine which stage the user is on (0 if not started)
-      const currentStage = progress?.currentStage || 0;
+      // Determine which stage the user is on (1 if not started, to unlock first stage)
+      const currentStage = progress?.currentStage || 1;
 
       // Map stages with locked/unlocked status
       const stagesWithAccess = await Promise.all(
