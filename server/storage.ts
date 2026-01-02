@@ -178,6 +178,7 @@ export interface IStorage {
 
   // Container Port Mappings
   getPortMappings(deploymentId: number): Promise<ContainerPortMapping[]>;
+  getPortMappingBySubdomain(subdomain: string): Promise<ContainerPortMapping | undefined>;
   addPortMapping(mapping: InsertContainerPortMapping): Promise<ContainerPortMapping>;
   deletePortMapping(id: number): Promise<boolean>;
 
@@ -782,6 +783,15 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(containerPortMappings)
       .where(eq(containerPortMappings.deploymentId, deploymentId));
+  }
+
+  async getPortMappingBySubdomain(subdomain: string): Promise<ContainerPortMapping | undefined> {
+    const result = await db
+      .select()
+      .from(containerPortMappings)
+      .where(eq(containerPortMappings.subdomain, subdomain))
+      .limit(1);
+    return result[0];
   }
 
   async addPortMapping(mapping: InsertContainerPortMapping): Promise<ContainerPortMapping> {

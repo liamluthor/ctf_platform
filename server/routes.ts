@@ -1658,7 +1658,7 @@ export async function registerRoutes(server: Server, app: Express) {
 
         // Get port mappings for URL generation
         const portMappings = await storage.getPortMappings(deployment.id);
-        const primaryServiceName = portMappings[0]?.serviceName;
+        const primarySubdomain = portMappings[0]?.subdomain;
 
         const linkedChallenges = challengeLinks.map(link => ({
           challengeId: link.challengeId,
@@ -1959,9 +1959,9 @@ export async function registerRoutes(server: Server, app: Express) {
       const accessUrls = portMappings.map(mapping => ({
         port: mapping.containerPort,
         protocol: mapping.protocol,
-        serviceName: mapping.serviceName || `Port ${mapping.containerPort}`,
-        // Use wildcard subdomain with instance name
-        url: `https://${activeDeployment.instanceName}.strayerraptors.com`,
+        subdomain: mapping.subdomain || `Port ${mapping.containerPort}`,
+        // Use wildcard subdomain with subdomain from port mapping
+        url: `https://${mapping.subdomain}.strayerraptors.com`,
         // Keep legacy direct port URL for admin panel
         directUrl: `${baseUrl}:${mapping.hostPort}`
       }));
@@ -1987,37 +1987,35 @@ export async function registerRoutes(server: Server, app: Express) {
   // ========== INTERNAL NGINX ENDPOINTS ==========
 
   // Internal endpoint for container port lookup (no auth required)
-  // Returns the host port for a given instance name
+  // Returns the host port for a given subdomain
   // Used by nginx to proxy container requests
   app.get("/api/internal/container-port-lookup", async (req, res) => {
     try {
-      const instanceName = req.headers['x-instance-name'] as string;
+      const subdomain = req.headers['x-subdomain'] as string;
 
-      if (!instanceName) {
-        return res.status(400).json({ error: "Missing instance name" });
+      if (!subdomain) {
+        return res.status(400).json({ error: "Missing subdomain" });
       }
 
-      // Get deployment by instance name
-      const deployment = await storage.getDeploymentByInstanceName(instanceName);
+      // Get port mapping by subdomain
+      const portMapping = await storage.getPortMappingBySubdomain(subdomain);
+      if (!portMapping) {
+        return res.status(404).json({ error: "Container not found" });
+      }
+
+      // Check if deployment is running
+      const deployment = await storage.getDeployment(portMapping.deploymentId);
       if (!deployment || deployment.status !== "running") {
-        return res.status(404).json({ error: "Container not found or not running" });
+        return res.status(404).json({ error: "Container not running" });
       }
-
-      // Get the primary port mapping (first one)
-      const portMappings = await storage.getPortMappings(deployment.id);
-      if (portMappings.length === 0) {
-        return res.status(500).json({ error: "No ports configured for this container" });
-      }
-
-      const primaryPort = portMappings[0].hostPort;
 
       // Return success with port in header
-      res.set("X-Backend-Port", primaryPort.toString());
+      res.set("X-Backend-Port", portMapping.hostPort.toString());
       res.status(200).json({
         success: true,
-        instanceName,
+        subdomain,
         deploymentId: deployment.id,
-        port: primaryPort
+        port: portMapping.hostPort
       });
     } catch (error) {
       logger.error({ error }, "Failed to lookup container port");

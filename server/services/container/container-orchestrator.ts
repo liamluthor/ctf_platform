@@ -31,10 +31,10 @@ export async function deployContainer(config: DeploymentConfig): Promise<Deploym
   }
 
   // Parse exposed ports from container configuration
-  // Support both old format (array of numbers) and new format (array of objects with serviceName)
+  // Support both old format (array of numbers) and new format (array of objects with subdomain)
   const exposedPortsRaw = JSON.parse(container.exposedPorts || "[]");
   const exposedPorts = Array.isArray(exposedPortsRaw)
-    ? exposedPortsRaw.map(p => typeof p === 'number' ? { containerPort: p, serviceName: undefined } : p)
+    ? exposedPortsRaw.map(p => typeof p === 'number' ? { containerPort: p, subdomain: undefined } : p)
     : [];
 
   if (exposedPorts.length === 0) {
@@ -47,7 +47,7 @@ export async function deployContainer(config: DeploymentConfig): Promise<Deploym
     containerPort: portConfig.containerPort,
     hostPort: hostPorts[idx],
     protocol: "tcp",
-    serviceName: portConfig.serviceName || undefined,
+    subdomain: portConfig.subdomain || undefined,
   }));
 
   // Get environment variables
@@ -155,7 +155,7 @@ export async function deployContainer(config: DeploymentConfig): Promise<Deploym
         containerPort: mapping.containerPort,
         hostPort: mapping.hostPort,
         protocol: mapping.protocol,
-        serviceName: mapping.serviceName,
+        subdomain: mapping.subdomain,
       });
     }
 

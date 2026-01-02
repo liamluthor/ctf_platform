@@ -562,7 +562,7 @@ export const containerPortMappings = pgTable("container_port_mappings", {
   containerPort: integer("container_port").notNull(),
   hostPort: integer("host_port").notNull(),
   protocol: text("protocol").notNull().default("tcp"),
-  serviceName: text("service_name"),
+  subdomain: text("subdomain").notNull().unique(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

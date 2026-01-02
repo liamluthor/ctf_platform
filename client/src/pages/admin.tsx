@@ -1649,10 +1649,8 @@ function SettingsTab() {
 function ContainersTab() {
   const { toast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [deployDialogOpen, setDeployDialogOpen] = useState(false);
   const [logsDialogOpen, setLogsDialogOpen] = useState(false);
   const [editingContainer, setEditingContainer] = useState<any | null>(null);
-  const [selectedContainer, setSelectedContainer] = useState<any | null>(null);
   const [selectedDeployment, setSelectedDeployment] = useState<any | null>(null);
   const [deploymentLogs, setDeploymentLogs] = useState("");
 
@@ -1670,13 +1668,9 @@ function ContainersTab() {
     cpuLimit: 256,
   });
 
-  const [portMappings, setPortMappings] = useState<Array<{ containerPort: number; serviceName: string }>>([
-    { containerPort: 80, serviceName: "" }
+  const [portMappings, setPortMappings] = useState<Array<{ containerPort: number; subdomain: string }>>([
+    { containerPort: 80, subdomain: "" }
   ]);
-
-  const [deployFormData, setDeployFormData] = useState({
-    instanceName: "",
-  });
 
   // Fetch containers
   const { data: containers = [], isLoading: containersLoading, refetch: refetchContainers } = useQuery({
@@ -1717,18 +1711,51 @@ function ContainersTab() {
         const error = await res.json();
         throw new Error(error.error || "Failed to save container");
       }
-      return res.json();
+      const container = await res.json();
+
+      // If creating a new container (not editing), auto-deploy it
+      if (!editingContainer) {
+        // Get the first port's subdomain to use as instance name
+        const exposedPorts = JSON.parse(data.exposedPorts || "[]");
+        const firstSubdomain = exposedPorts[0]?.subdomain;
+
+        if (!firstSubdomain) {
+          throw new Error("Subdomain is required for deployment");
+        }
+
+        // Deploy the container
+        const deployRes = await fetch(`/api/admin/containers/${container.id}/deploy`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ instanceName: firstSubdomain }),
+        });
+
+        if (!deployRes.ok) {
+          // Deployment failed - rollback by deleting the container
+          await fetch(`/api/admin/containers/${container.id}`, {
+            method: "DELETE",
+            credentials: "include",
+          });
+
+          const deployError = await deployRes.json();
+          throw new Error(deployError.error || "Failed to deploy container. Container has been removed.");
+        }
+      }
+
+      return container;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/containers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/deployments"] });
       setDialogOpen(false);
       setEditingContainer(null);
       resetForm();
       toast({
-        title: editingContainer ? "Container updated" : "Container created",
+        title: editingContainer ? "Container updated" : "Container created and deployed",
         description: editingContainer
           ? "Container has been updated successfully"
-          : "Container has been created successfully",
+          : "Container has been created and deployed successfully",
       });
     },
     onError: (error: Error) => {
@@ -1755,36 +1782,6 @@ function ContainersTab() {
     },
     onError: (error: Error) => {
       toast({ variant: "destructive", title: "Error", description: error.message });
-    },
-  });
-
-  // Deploy container mutation
-  const deployMutation = useMutation({
-    mutationFn: async ({ containerId, instanceName }: { containerId, instanceName: string }) => {
-      const res = await fetch(`/api/admin/containers/${containerId}/deploy`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ instanceName }),
-      });
-
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || "Failed to deploy container");
-      }
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/deployments"] });
-      setDeployDialogOpen(false);
-      setDeployFormData({ instanceName: "" });
-      toast({
-        title: "Container deployed",
-        description: "Container instance has been deployed successfully",
-      });
-    },
-    onError: (error: Error) => {
-      toast({ variant: "destructive", title: "Deployment failed", description: error.message });
     },
   });
 
@@ -1880,7 +1877,7 @@ function ContainersTab() {
       memoryLimit: 512,
       cpuLimit: 256,
     });
-    setPortMappings([{ containerPort: 80, serviceName: "" }]);
+    setPortMappings([{ containerPort: 80, subdomain: "" }]);
   };
 
   const openEditDialog = (container: any) => {
@@ -1905,13 +1902,13 @@ function ContainersTab() {
       if (Array.isArray(ports) && ports.length > 0) {
         setPortMappings(ports.map((p: any) => ({
           containerPort: typeof p === 'number' ? p : p.containerPort,
-          serviceName: typeof p === 'object' ? (p.serviceName || "") : ""
+          subdomain: typeof p === 'object' ? (p.subdomain || p.serviceName || "") : ""
         })));
       } else {
-        setPortMappings([{ containerPort: 80, serviceName: "" }]);
+        setPortMappings([{ containerPort: 80, subdomain: "" }]);
       }
     } catch {
-      setPortMappings([{ containerPort: 80, serviceName: "" }]);
+      setPortMappings([{ containerPort: 80, subdomain: "" }]);
     }
 
     setDialogOpen(true);
@@ -1923,23 +1920,13 @@ function ContainersTab() {
     // Convert port mappings to JSON format for exposedPorts field
     const exposedPortsData = portMappings.map(pm => ({
       containerPort: pm.containerPort,
-      serviceName: pm.serviceName || undefined
+      subdomain: pm.subdomain
     }));
 
     containerMutation.mutate({
       ...formData,
       exposedPorts: JSON.stringify(exposedPortsData)
     });
-  };
-
-  const handleDeploy = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (selectedContainer) {
-      deployMutation.mutate({
-        containerId: selectedContainer.id,
-        instanceName: deployFormData.instanceName,
-      });
-    }
   };
 
   return (
@@ -2074,7 +2061,7 @@ function ContainersTab() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => setPortMappings([...portMappings, { containerPort: 80, serviceName: "" }])}
+                    onClick={() => setPortMappings([...portMappings, { containerPort: 80, subdomain: "" }])}
                   >
                     <Plus className="w-4 h-4 mr-1" />
                     Add Port
@@ -2101,17 +2088,18 @@ function ContainersTab() {
                         />
                       </div>
                       <div className="col-span-7">
-                        <Label htmlFor={`service-${index}`} className="text-xs">Service Name (optional)</Label>
+                        <Label htmlFor={`subdomain-${index}`} className="text-xs">Subdomain (required)</Label>
                         <Input
-                          id={`service-${index}`}
-                          value={mapping.serviceName}
+                          id={`subdomain-${index}`}
+                          value={mapping.subdomain}
                           onChange={(e) => {
                             const updated = [...portMappings];
-                            updated[index].serviceName = e.target.value.toLowerCase().replace(/[^a-z0-9\-_]/g, '');
+                            updated[index].subdomain = e.target.value.toLowerCase().replace(/[^a-z0-9\-]/g, '');
                             setPortMappings(updated);
                           }}
-                          placeholder="santas-workshop"
-                          pattern="[a-z0-9\-_]*"
+                          placeholder="whamazon"
+                          pattern="[a-z0-9]([a-z0-9\-]*[a-z0-9])?"
+                          required
                         />
                       </div>
                       <div className="col-span-1">
@@ -2133,7 +2121,7 @@ function ContainersTab() {
                   ))}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Service names allow friendly URLs like /challenge/1/santas-workshop instead of /challenge/1/port/80
+                  Each port gets its own subdomain (e.g., "whamazon" becomes https://whamazon.strayerraptors.com)
                 </p>
               </div>
 
@@ -2257,18 +2245,6 @@ function ContainersTab() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedContainer(container);
-                            setDeployFormData({ instanceName: `${container.name}-${Date.now()}` });
-                            setDeployDialogOpen(true);
-                          }}
-                        >
-                          <Play className="w-4 h-4 mr-1" />
-                          Deploy
-                        </Button>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button
@@ -2458,43 +2434,6 @@ function ContainersTab() {
           )}
         </CardContent>
       </Card>
-
-      {/* Deploy Dialog */}
-      <Dialog open={deployDialogOpen} onOpenChange={setDeployDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Deploy Container</DialogTitle>
-            <DialogDescription>
-              Create a new deployment instance for {selectedContainer?.name}
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleDeploy} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="instanceName">Instance Name *</Label>
-              <Input
-                id="instanceName"
-                value={deployFormData.instanceName}
-                onChange={(e) => setDeployFormData({ instanceName: e.target.value })}
-                placeholder="my-container-instance"
-                required
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setDeployDialogOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={deployMutation.isPending}>
-                {deployMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                Deploy
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
 
       {/* Logs Dialog */}
       <Dialog open={logsDialogOpen} onOpenChange={setLogsDialogOpen}>
