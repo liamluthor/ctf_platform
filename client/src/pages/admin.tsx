@@ -1669,7 +1669,7 @@ function ContainersTab() {
     cpuLimit: 256,
   });
 
-  const [portMappings, setPortMappings] = useState<Array<{ containerPort: number; subdomain: string }>>([
+  const [portMappings, setPortMappings] = useState<Array<{ containerPort: number | ""; subdomain: string }>>([
     { containerPort: 80, subdomain: "" }
   ]);
 
@@ -1969,9 +1969,14 @@ function ContainersTab() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Validate that all ports are valid numbers
+    if (portMappings.some(pm => !pm.containerPort || pm.containerPort === "")) {
+      return; // HTML5 required attribute should prevent this, but double-check
+    }
+
     // Convert port mappings to JSON format for exposedPorts field
     const exposedPortsData = portMappings.map(pm => ({
-      containerPort: pm.containerPort,
+      containerPort: typeof pm.containerPort === "number" ? pm.containerPort : parseInt(pm.containerPort),
       subdomain: pm.subdomain
     }));
 
@@ -2127,10 +2132,10 @@ function ContainersTab() {
                         <Input
                           id={`port-${index}`}
                           type="number"
-                          value={mapping.containerPort}
+                          value={mapping.containerPort || ""}
                           onChange={(e) => {
                             const updated = [...portMappings];
-                            updated[index].containerPort = parseInt(e.target.value) || 80;
+                            updated[index].containerPort = e.target.value === "" ? "" : parseInt(e.target.value);
                             setPortMappings(updated);
                           }}
                           placeholder="80"
