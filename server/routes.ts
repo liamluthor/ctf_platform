@@ -2458,7 +2458,7 @@ export async function registerRoutes(server: Server, app: Express) {
   });
 
   // Upload stage files
-  app.post("/api/admin/serial-stages/:id/files", requireAdmin, uploadMiddleware, async (req, res) => {
+  app.post("/api/admin/serial-stages/:id/files", requireAdmin, upload.single("file"), async (req, res) => {
     try {
       const stageId = parseInt(req.params.id);
 
@@ -2493,7 +2493,7 @@ export async function registerRoutes(server: Server, app: Express) {
       }
 
       // Delete file from filesystem
-      await fs.unlink(file.path);
+      await deleteFile(file.filename);
 
       const success = await storage.deleteSerialStageFile(fileId);
       if (!success) {
