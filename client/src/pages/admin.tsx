@@ -1854,6 +1854,42 @@ function SerialChallengesTab() {
     onError: () => toast({ title: "Failed to delete stage", variant: "destructive" }),
   });
 
+  // Upload file to stage
+  const uploadFileMutation = useMutation({
+    mutationFn: async ({ stageId, file }: { stageId: number; file: File }) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch(`/api/admin/serial-stages/${stageId}/files`, {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+      if (!res.ok) throw new Error("Failed to upload file");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "File uploaded successfully" });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/serial-challenges", selectedChallenge!.id, "stages"] });
+    },
+    onError: () => toast({ title: "Failed to upload file", variant: "destructive" }),
+  });
+
+  // Delete file from stage
+  const deleteFileMutation = useMutation({
+    mutationFn: async ({ stageId, fileId }: { stageId: number; fileId: number }) => {
+      const res = await fetch(`/api/admin/serial-stages/${stageId}/files/${fileId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to delete file");
+    },
+    onSuccess: () => {
+      toast({ title: "File deleted successfully" });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/serial-challenges", selectedChallenge!.id, "stages"] });
+    },
+    onError: () => toast({ title: "Failed to delete file", variant: "destructive" }),
+  });
+
   const resetForm = () => {
     setFormData({
       name: "",
@@ -2140,6 +2176,15 @@ function SerialChallengesTab() {
                             <p className="text-sm text-muted-foreground mt-1">
                               {stage.description}
                             </p>
+                            {stage.files && stage.files.length > 0 && (
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                {stage.files.map((file: any) => (
+                                  <Badge key={file.id} variant="secondary" className="text-xs">
+                                    {file.originalName}
+                                  </Badge>
+                                ))}
+                              </div>
+                            )}
                           </div>
                           <div className="flex gap-2">
                             <Button
@@ -2231,6 +2276,53 @@ function SerialChallengesTab() {
                 rows={2}
               />
             </div>
+
+            {/* File Management Section - Only show when editing */}
+            {editingStage && (
+              <div className="border-t border-white/10 pt-4 space-y-3">
+                <div>
+                  <Label className="text-sm font-medium">Stage Files</Label>
+
+                  {/* Existing Files */}
+                  {editingStage.files && editingStage.files.length > 0 ? (
+                    <div className="mt-2 space-y-2">
+                      {editingStage.files.map((file: any) => (
+                        <div key={file.id} className="flex items-center justify-between p-2 bg-secondary rounded-md">
+                          <span className="text-sm">{file.originalName}</span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => deleteFileMutation.mutate({ stageId: editingStage.id, fileId: file.id })}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground mt-2">No files uploaded yet.</p>
+                  )}
+
+                  {/* Upload New File */}
+                  <div className="mt-3">
+                    <Input
+                      id={`file-upload-${editingStage.id}`}
+                      type="file"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          uploadFileMutation.mutate({ stageId: editingStage.id, file });
+                          // Reset input
+                          e.target.value = '';
+                        }
+                      }}
+                      className="bg-secondary border-white/10"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setStageFormDialogOpen(false)}>
                 Cancel

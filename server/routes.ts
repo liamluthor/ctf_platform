@@ -2408,6 +2408,30 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
+  // Get stages for a serial challenge (admin - includes all details and files)
+  app.get("/api/admin/serial-challenges/:id/stages", requireAdmin, async (req, res) => {
+    try {
+      const serialChallengeId = parseInt(req.params.id);
+      const stages = await storage.getStagesBySerialChallenge(serialChallengeId);
+
+      // Fetch files for each stage
+      const stagesWithFiles = await Promise.all(
+        stages.map(async (stage) => {
+          const files = await storage.getSerialStageFiles(stage.id);
+          return {
+            ...stage,
+            files,
+          };
+        })
+      );
+
+      res.json(stagesWithFiles);
+    } catch (error) {
+      logger.error({ error }, "Failed to get stages for admin");
+      res.status(500).json({ error: "Failed to get stages" });
+    }
+  });
+
   // Add stage to serial challenge
   app.post("/api/admin/serial-challenges/:id/stages", requireAdmin, sanitizeRequestBody, async (req, res) => {
     try {
