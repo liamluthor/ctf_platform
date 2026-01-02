@@ -241,3 +241,23 @@ export async function pullImage(imageName: string): Promise<void> {
     });
   });
 }
+
+/**
+ * Find a Docker container by name
+ * Returns the container ID if found, null if not found
+ */
+export async function findContainerByName(containerName: string): Promise<string | null> {
+  try {
+    const docker = getDockerClient();
+    const containers = await docker.listContainers({ all: true });
+
+    const found = containers.find(c =>
+      c.Names?.some(name => name === `/${containerName}` || name === containerName)
+    );
+
+    return found ? found.Id : null;
+  } catch (error) {
+    console.error("Failed to find container by name:", error);
+    return null;
+  }
+}

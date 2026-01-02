@@ -593,9 +593,10 @@ function ChallengesTab() {
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       toast({ title: "Files uploaded successfully" });
       refetchFiles();
+      queryClient.invalidateQueries({ queryKey: [`/api/challenges/${variables.challengeId}/files`] });
     },
     onError: (error: Error) => toast({
       title: "Failed to upload files",
@@ -612,9 +613,10 @@ function ChallengesTab() {
       });
       if (!res.ok) throw new Error("Failed to delete file");
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       toast({ title: "File deleted" });
       refetchFiles();
+      queryClient.invalidateQueries({ queryKey: [`/api/challenges/${variables.challengeId}/files`] });
     },
     onError: () => toast({ title: "Failed to delete file", variant: "destructive" }),
   });
@@ -635,6 +637,7 @@ function ChallengesTab() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/admin/challenges/${editingChallenge?.id}/containers`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/challenges/${editingChallenge?.id}/container`] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/containers"] });
       toast({ title: "Container linked successfully" });
     },
@@ -653,6 +656,7 @@ function ChallengesTab() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/admin/challenges/${editingChallenge?.id}/containers`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/challenges/${editingChallenge?.id}/container`] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/containers"] });
       toast({ title: "Container unlinked successfully" });
     },
@@ -1747,9 +1751,12 @@ function SerialChallengesTab() {
       if (!res.ok) throw new Error("Failed to create serial challenge");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast({ title: "Serial challenge created successfully" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/serial-challenges"] });
+      if (data.ctfEventId) {
+        queryClient.invalidateQueries({ queryKey: [`/api/ctfs/${data.ctfEventId}/serial-challenges`] });
+      }
       setDialogOpen(false);
       resetForm();
     },
@@ -1768,9 +1775,12 @@ function SerialChallengesTab() {
       if (!res.ok) throw new Error("Failed to update serial challenge");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast({ title: "Serial challenge updated successfully" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/serial-challenges"] });
+      if (data.ctfEventId) {
+        queryClient.invalidateQueries({ queryKey: [`/api/ctfs/${data.ctfEventId}/serial-challenges`] });
+      }
       setDialogOpen(false);
       resetForm();
     },
@@ -1779,16 +1789,20 @@ function SerialChallengesTab() {
 
   // Delete serial challenge
   const deleteMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const res = await fetch(`/api/admin/serial-challenges/${id}`, {
+    mutationFn: async (challenge: any) => {
+      const res = await fetch(`/api/admin/serial-challenges/${challenge.id}`, {
         method: "DELETE",
         credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to delete serial challenge");
+      return challenge;
     },
-    onSuccess: () => {
+    onSuccess: (challenge) => {
       toast({ title: "Serial challenge deleted successfully" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/serial-challenges"] });
+      if (challenge.ctfEventId) {
+        queryClient.invalidateQueries({ queryKey: [`/api/ctfs/${challenge.ctfEventId}/serial-challenges`] });
+      }
     },
     onError: () => toast({ title: "Failed to delete serial challenge", variant: "destructive" }),
   });
@@ -1870,6 +1884,7 @@ function SerialChallengesTab() {
     onSuccess: () => {
       toast({ title: "File uploaded successfully" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/serial-challenges", selectedChallenge!.id, "stages"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/serial-challenges/${selectedChallenge!.id}/stages`] });
     },
     onError: () => toast({ title: "Failed to upload file", variant: "destructive" }),
   });
@@ -1886,6 +1901,7 @@ function SerialChallengesTab() {
     onSuccess: () => {
       toast({ title: "File deleted successfully" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/serial-challenges", selectedChallenge!.id, "stages"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/serial-challenges/${selectedChallenge!.id}/stages`] });
     },
     onError: () => toast({ title: "Failed to delete file", variant: "destructive" }),
   });
@@ -2042,7 +2058,7 @@ function SerialChallengesTab() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => deleteMutation.mutate(challenge.id)}
+                          onClick={() => deleteMutation.mutate(challenge)}
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>
@@ -2488,7 +2504,7 @@ function ContainersTab() {
     },
   });
 
-  // Refresh Docker image mutation
+  // Refresh Docker image mutation (nuclear clean: remove all containers, pull fresh image)
   const refreshImageMutation = useMutation({
     mutationFn: async (containerId: number) => {
       const res = await fetch(`/api/admin/containers/${containerId}/refresh-image`, {
@@ -2506,12 +2522,58 @@ function ContainersTab() {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/deployments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/containers"] });
       toast({
-        title: "Image refreshed",
-        description: `${data.message}. Stopped ${data.stoppedDeployments} deployment(s).`,
+        title: "Nuclear refresh complete",
+        description: `Removed ${data.removedContainers} container(s), deleted ${data.deletedDeployments} deployment(s)${data.pulledImage ? ', pulled fresh image' : ''}. Ready for fresh deployment.`,
       });
     },
     onError: (error: Error) => {
       toast({ variant: "destructive", title: "Refresh failed", description: error.message });
+    },
+  });
+
+  // Deploy container mutation (smart deploy: restart if exists, create if doesn't)
+  const deployContainerMutation = useMutation({
+    mutationFn: async (container: any) => {
+      // Get the first port's subdomain to use as instance name
+      const exposedPorts = JSON.parse(container.exposedPorts || "[]");
+      const firstSubdomain = exposedPorts[0]?.subdomain;
+
+      if (!firstSubdomain) {
+        throw new Error("Subdomain is required for deployment");
+      }
+
+      const res = await fetch(`/api/admin/containers/${container.id}/deploy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ instanceName: firstSubdomain }),
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Failed to deploy container");
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/deployments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/containers"] });
+
+      // Show appropriate message based on whether container was restarted or deployed fresh
+      if (data.wasRestarted) {
+        toast({
+          title: "Container restarted",
+          description: "Existing container has been restarted successfully"
+        });
+      } else {
+        toast({
+          title: "Container deployed",
+          description: "Container has been deployed successfully"
+        });
+      }
+    },
+    onError: (error: Error) => {
+      toast({ variant: "destructive", title: "Deploy failed", description: error.message });
     },
   });
 
@@ -2994,6 +3056,18 @@ function ContainersTab() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => deployContainerMutation.mutate(container)}
+                          disabled={deployContainerMutation.isPending}
+                        >
+                          {deployContainerMutation.isPending ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Play className="w-4 h-4" />
+                          )}
+                        </Button>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button
