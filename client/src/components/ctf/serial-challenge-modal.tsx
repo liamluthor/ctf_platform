@@ -148,14 +148,17 @@ export function SerialChallengeModal({ challenge: initialChallenge, ctfId, onClo
                     stage.isLocked
                       ? "opacity-60"
                       : stage.isSolved
-                        ? "border-primary/50"
+                        ? "border-green-500/50"
                         : ""
                   }
                 >
                   <CardHeader>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <Badge variant={stage.isSolved ? "default" : "outline"}>
+                        <Badge
+                          variant={stage.isSolved ? "default" : "outline"}
+                          className={stage.isSolved ? "bg-green-500 hover:bg-green-600" : ""}
+                        >
                           Stage {stage.stageOrder}
                         </Badge>
                         <CardTitle className="text-lg">{stage.name}</CardTitle>
@@ -163,7 +166,7 @@ export function SerialChallengeModal({ challenge: initialChallenge, ctfId, onClo
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium">{stage.points} pts</span>
                         {stage.isLocked && <Lock className="w-4 h-4 text-muted-foreground" />}
-                        {stage.isSolved && <CheckCircle2 className="w-4 h-4 text-primary" />}
+                        {stage.isSolved && <CheckCircle2 className="w-4 h-4 text-green-500" />}
                       </div>
                     </div>
                   </CardHeader>
@@ -229,7 +232,7 @@ export function SerialChallengeModal({ challenge: initialChallenge, ctfId, onClo
                       )}
 
                       {stage.isSolved && (
-                        <div className="text-sm text-primary font-medium">
+                        <div className="text-sm text-green-500 font-medium">
                           ✓ Completed
                         </div>
                       )}
