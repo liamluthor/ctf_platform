@@ -162,7 +162,7 @@ export function SerialChallengeModal({ challenge, ctfId, onClose }: SerialChalle
                                 key={file.id}
                                 variant="outline"
                                 size="sm"
-                                onClick={() => window.open(`/api/files/${file.filename}`, "_blank")}
+                                onClick={() => window.open(`/api/serial-stages/${stage.id}/files/${file.id}`, "_blank")}
                               >
                                 <Download className="w-3 h-3 mr-1" />
                                 {file.originalName}

@@ -2343,6 +2343,61 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
+  // Download serial stage file
+  app.get("/api/serial-stages/:stageId/files/:fileId", requireAuth, async (req, res) => {
+    try {
+      const stageId = parseInt(req.params.stageId);
+      const fileId = parseInt(req.params.fileId);
+      const userId = req.user!.id;
+      const isAdmin = req.user?.role === "admin" || req.user?.role === "owner";
+
+      // Get the stage
+      const stage = await storage.getSerialStage(stageId);
+      if (!stage) {
+        return res.status(404).json({ error: "Stage not found" });
+      }
+
+      // Get the serial challenge
+      const serialChallenge = await storage.getSerialChallenge(stage.serialChallengeId);
+      if (!serialChallenge) {
+        return res.status(404).json({ error: "Serial challenge not found" });
+      }
+
+      // Get the CTF event
+      const ctfEvent = await storage.getCtfEvent(serialChallenge.ctfEventId);
+      if (!ctfEvent) {
+        return res.status(404).json({ error: "CTF event not found" });
+      }
+
+      // Check if user has access (must be registered for CTF and stage must be unlocked)
+      if (!isAdmin) {
+        const registration = await storage.getCtfRegistration(userId, ctfEvent.id);
+        if (!registration) {
+          return res.status(403).json({ error: "You must be registered for this CTF" });
+        }
+
+        // Check if stage is unlocked
+        const progress = await storage.getSerialProgress(userId, serialChallenge.id);
+        const currentStage = progress?.currentStage || 1;
+        if (stage.stageOrder > currentStage) {
+          return res.status(403).json({ error: "This stage is locked" });
+        }
+      }
+
+      // Get the file
+      const file = await storage.getSerialStageFile(fileId);
+      if (!file || file.stageId !== stageId) {
+        return res.status(404).json({ error: "File not found" });
+      }
+
+      const filePath = getFilePath(file.filename);
+      res.download(filePath, file.originalName);
+    } catch (error) {
+      logger.error({ error }, "Failed to download serial stage file");
+      res.status(500).json({ error: "Failed to download file" });
+    }
+  });
+
   // ========== ADMIN SERIAL CHALLENGE ROUTES ==========
 
   // Get all serial challenges
