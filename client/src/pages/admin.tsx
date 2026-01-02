@@ -1920,11 +1920,19 @@ function SerialChallengesTab() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const data = {
-      ...formData,
+    const data: any = {
+      name: formData.name,
+      description: formData.description,
       ctfEventId: parseInt(formData.ctfEventId),
       categoryId: parseInt(formData.categoryId),
+      isHidden: formData.isHidden,
+      releaseTime: formData.releaseTime,
     };
+
+    // Only include authorId if it's not empty
+    if (formData.authorId && formData.authorId.trim() !== "") {
+      data.authorId = formData.authorId;
+    }
 
     if (editingChallenge) {
       updateMutation.mutate({ id: editingChallenge.id, data });
