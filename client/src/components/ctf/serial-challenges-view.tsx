@@ -52,7 +52,11 @@ export function SerialChallengesView({ ctfId }: SerialChallengesViewProps) {
           return (
             <Card
               key={challenge.id}
-              className="cursor-pointer hover:border-primary/50 transition-colors"
+              className={`cursor-pointer transition-colors ${
+                challenge.isComplete
+                  ? "border-green-500/50 hover:border-green-500"
+                  : "hover:border-primary/50"
+              }`}
               onClick={() => setSelectedChallenge(challenge)}
             >
               <CardHeader>
@@ -77,20 +81,24 @@ export function SerialChallengesView({ ctfId }: SerialChallengesViewProps) {
                 {/* Progress Bar */}
                 <div className="w-full bg-secondary rounded-full h-2">
                   <div
-                    className="bg-primary h-2 rounded-full transition-all"
+                    className={`h-2 rounded-full transition-all ${
+                      challenge.isComplete ? "bg-green-500" : "bg-primary"
+                    }`}
                     style={{ width: `${progressPercent}%` }}
                   />
                 </div>
 
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-muted-foreground">Points Earned</span>
-                  <span className="font-medium text-primary">
+                  <span className={`font-medium ${
+                    challenge.isComplete ? "text-green-500" : "text-primary"
+                  }`}>
                     {challenge.totalPointsEarned || 0} pts
                   </span>
                 </div>
 
                 {challenge.isComplete ? (
-                  <Badge variant="default" className="w-full justify-center">
+                  <Badge className="w-full justify-center bg-green-500 hover:bg-green-600">
                     <CheckCircle2 className="w-3 h-3 mr-1" />
                     Complete
                   </Badge>

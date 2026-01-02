@@ -116,12 +116,12 @@ export function SerialChallengeModal({ challenge: initialChallenge, ctfId, onClo
 
           {/* Challenge Complete Banner */}
           {challenge.isComplete && (
-            <Card className="bg-primary/10 border-primary/50">
+            <Card className="bg-green-500/10 border-green-500/50">
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
-                  <CheckCircle2 className="w-6 h-6 text-primary" />
+                  <CheckCircle2 className="w-6 h-6 text-green-500" />
                   <div>
-                    <h3 className="font-semibold text-primary">Challenge Complete!</h3>
+                    <h3 className="font-semibold text-green-500">Challenge Complete!</h3>
                     <p className="text-sm text-muted-foreground">
                       You've completed all {challenge.totalStages} stages and earned {challenge.totalPointsEarned} points!
                     </p>
