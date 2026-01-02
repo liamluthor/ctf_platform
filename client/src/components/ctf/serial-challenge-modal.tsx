@@ -16,9 +16,17 @@ interface SerialChallengeModalProps {
   onClose: () => void;
 }
 
-export function SerialChallengeModal({ challenge, ctfId, onClose }: SerialChallengeModalProps) {
+export function SerialChallengeModal({ challenge: initialChallenge, ctfId, onClose }: SerialChallengeModalProps) {
   const { toast } = useToast();
   const [flags, setFlags] = useState<Record<number, string>>({});
+
+  // Fetch fresh challenge data to keep progress updated
+  const { data: challenges } = useQuery<any[]>({
+    queryKey: [`/api/ctfs/${ctfId}/serial-challenges`],
+  });
+
+  // Find the current challenge from the fresh data
+  const challenge = challenges?.find(c => c.id === initialChallenge.id) || initialChallenge;
 
   const { data: stages, isLoading } = useQuery<any[]>({
     queryKey: [`/api/serial-challenges/${challenge.id}/stages`],
@@ -105,6 +113,23 @@ export function SerialChallengeModal({ challenge, ctfId, onClose }: SerialChalle
               </span>
             </div>
           </div>
+
+          {/* Challenge Complete Banner */}
+          {challenge.isComplete && (
+            <Card className="bg-primary/10 border-primary/50">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <CheckCircle2 className="w-6 h-6 text-primary" />
+                  <div>
+                    <h3 className="font-semibold text-primary">Challenge Complete!</h3>
+                    <p className="text-sm text-muted-foreground">
+                      You've completed all {challenge.totalStages} stages and earned {challenge.totalPointsEarned} points!
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {isLoading ? (
             <div className="flex justify-center p-8">
