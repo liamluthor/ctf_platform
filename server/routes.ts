@@ -1757,8 +1757,9 @@ export async function registerRoutes(server: Server, app: Express) {
       const deployments = await storage.getAllDeployments();
 
       // Create a map of Docker container IDs that are tracked in the database
+      // Docker returns full 64-char IDs, match them with platform_id (which stores full ID)
       const trackedContainerIds = new Set(
-        deployments.map(d => d.dockerContainerId).filter(Boolean)
+        deployments.map(d => d.platformId).filter(Boolean)
       );
 
       // Mark containers as orphaned if they're not in the database
