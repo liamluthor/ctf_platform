@@ -611,6 +611,7 @@ function ChallengesTab() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/admin/challenges/${editingChallenge?.id}/containers`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/containers"] });
       toast({ title: "Container linked successfully" });
     },
     onError: () => {
@@ -628,6 +629,7 @@ function ChallengesTab() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/admin/challenges/${editingChallenge?.id}/containers`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/containers"] });
       toast({ title: "Container unlinked successfully" });
     },
     onError: () => {
