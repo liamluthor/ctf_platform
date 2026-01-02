@@ -26,6 +26,15 @@ export function DateTimePicker({ value, onChange, placeholder = "Pick a date and
   )
   const [open, setOpen] = React.useState(false)
 
+  // Sync internal state when value prop changes
+  React.useEffect(() => {
+    const newDate = value ? (typeof value === 'string' ? new Date(value) : value) : undefined
+    setDate(newDate)
+    if (newDate) {
+      setTime(format(newDate, "HH:mm"))
+    }
+  }, [value])
+
   const handleDateSelect = (selectedDate: Date | undefined) => {
     if (selectedDate) {
       const [hours, minutes] = time.split(':').map(Number)
