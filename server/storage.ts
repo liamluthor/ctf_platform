@@ -30,6 +30,16 @@ import {
   type InsertEmailVerificationToken,
   type PasswordResetToken,
   type InsertPasswordResetToken,
+  type SerialChallenge,
+  type InsertSerialChallenge,
+  type SerialStage,
+  type InsertSerialStage,
+  type SerialStageFile,
+  type InsertSerialStageFile,
+  type SerialProgress,
+  type InsertSerialProgress,
+  type SerialStageSolve,
+  type InsertSerialStageSolve,
   users,
   teams,
   teamMembers,
@@ -47,6 +57,11 @@ import {
   containerEnvVars,
   emailVerificationTokens,
   passwordResetTokens,
+  serialChallenges,
+  serialStages,
+  serialStageFiles,
+  serialProgress,
+  serialStageSolves,
 } from "@shared/schema";
 import { platformSettingsService } from "./services/platform-settings";
 import { db } from "./db";
@@ -201,6 +216,38 @@ export interface IStorage {
   deletePasswordResetToken(id: number): Promise<boolean>;
   deletePasswordResetTokensByUserId(userId: string): Promise<void>;
   markPasswordResetTokenUsed(id: number): Promise<void>;
+
+  // Serial Challenges
+  getSerialChallenge(id: number): Promise<SerialChallenge | undefined>;
+  getSerialChallengesByCtfEvent(ctfEventId: number): Promise<SerialChallenge[]>;
+  createSerialChallenge(challenge: InsertSerialChallenge): Promise<SerialChallenge>;
+  updateSerialChallenge(id: number, updates: Partial<InsertSerialChallenge>): Promise<SerialChallenge | undefined>;
+  deleteSerialChallenge(id: number): Promise<boolean>;
+
+  // Serial Stages
+  getSerialStage(id: number): Promise<SerialStage | undefined>;
+  getStagesBySerialChallenge(serialChallengeId: number): Promise<SerialStage[]>;
+  createSerialStage(stage: InsertSerialStage): Promise<SerialStage>;
+  updateSerialStage(id: number, updates: Partial<InsertSerialStage>): Promise<SerialStage | undefined>;
+  deleteSerialStage(id: number): Promise<boolean>;
+
+  // Serial Stage Files
+  getSerialStageFiles(stageId: number): Promise<SerialStageFile[]>;
+  getSerialStageFile(id: number): Promise<SerialStageFile | undefined>;
+  addSerialStageFile(file: InsertSerialStageFile): Promise<SerialStageFile>;
+  deleteSerialStageFile(id: number): Promise<boolean>;
+
+  // Serial Progress
+  getSerialProgress(userId: string, serialChallengeId: number): Promise<SerialProgress | undefined>;
+  getUserSerialProgressForCtf(userId: string, ctfEventId: number): Promise<SerialProgress[]>;
+  createSerialProgress(progress: InsertSerialProgress): Promise<SerialProgress>;
+  updateSerialProgress(id: number, updates: Partial<InsertSerialProgress>): Promise<SerialProgress | undefined>;
+
+  // Serial Stage Solves
+  createSerialStageSolve(solve: InsertSerialStageSolve): Promise<SerialStageSolve>;
+  getSerialStageSolves(stageId: number): Promise<SerialStageSolve[]>;
+  getUserStageSolve(userId: string, stageId: number): Promise<SerialStageSolve | undefined>;
+  getStageFirstBlood(stageId: number): Promise<SerialStageSolve | undefined>;
 
   sessionStore: session.Store;
 }
@@ -877,6 +924,175 @@ export class DatabaseStorage implements IStorage {
 
   async markPasswordResetTokenUsed(id: number): Promise<void> {
     await db.update(passwordResetTokens).set({ used: true, usedAt: new Date() }).where(eq(passwordResetTokens.id, id));
+  }
+
+  // ========== SERIAL CHALLENGES ==========
+  async getSerialChallenge(id: number): Promise<SerialChallenge | undefined> {
+    const result = await db.select().from(serialChallenges).where(eq(serialChallenges.id, id)).limit(1);
+    return result[0];
+  }
+
+  async getSerialChallengesByCtfEvent(ctfEventId: number): Promise<SerialChallenge[]> {
+    return await db
+      .select()
+      .from(serialChallenges)
+      .where(eq(serialChallenges.ctfEventId, ctfEventId))
+      .orderBy(serialChallenges.categoryId, serialChallenges.name);
+  }
+
+  async createSerialChallenge(challenge: InsertSerialChallenge): Promise<SerialChallenge> {
+    const result = await db.insert(serialChallenges).values(challenge).returning();
+    return result[0];
+  }
+
+  async updateSerialChallenge(id: number, updates: Partial<InsertSerialChallenge>): Promise<SerialChallenge | undefined> {
+    const result = await db.update(serialChallenges).set(updates).where(eq(serialChallenges.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteSerialChallenge(id: number): Promise<boolean> {
+    const result = await db.delete(serialChallenges).where(eq(serialChallenges.id, id)).returning();
+    return result.length > 0;
+  }
+
+  // ========== SERIAL STAGES ==========
+  async getSerialStage(id: number): Promise<SerialStage | undefined> {
+    const result = await db.select().from(serialStages).where(eq(serialStages.id, id)).limit(1);
+    return result[0];
+  }
+
+  async getStagesBySerialChallenge(serialChallengeId: number): Promise<SerialStage[]> {
+    return await db
+      .select()
+      .from(serialStages)
+      .where(eq(serialStages.serialChallengeId, serialChallengeId))
+      .orderBy(serialStages.stageOrder);
+  }
+
+  async createSerialStage(stage: InsertSerialStage): Promise<SerialStage> {
+    const result = await db.insert(serialStages).values(stage).returning();
+
+    // Update total_stages count on the parent serial challenge
+    await db
+      .update(serialChallenges)
+      .set({ totalStages: sql`${serialChallenges.totalStages} + 1` })
+      .where(eq(serialChallenges.id, stage.serialChallengeId));
+
+    return result[0];
+  }
+
+  async updateSerialStage(id: number, updates: Partial<InsertSerialStage>): Promise<SerialStage | undefined> {
+    const result = await db.update(serialStages).set(updates).where(eq(serialStages.id, id)).returning();
+    return result[0];
+  }
+
+  async deleteSerialStage(id: number): Promise<boolean> {
+    // Get the stage before deletion to update total_stages
+    const stage = await this.getSerialStage(id);
+    if (!stage) return false;
+
+    const result = await db.delete(serialStages).where(eq(serialStages.id, id)).returning();
+
+    if (result.length > 0) {
+      // Update total_stages count on the parent serial challenge
+      await db
+        .update(serialChallenges)
+        .set({ totalStages: sql`${serialChallenges.totalStages} - 1` })
+        .where(eq(serialChallenges.id, stage.serialChallengeId));
+    }
+
+    return result.length > 0;
+  }
+
+  // ========== SERIAL STAGE FILES ==========
+  async getSerialStageFiles(stageId: number): Promise<SerialStageFile[]> {
+    return await db.select().from(serialStageFiles).where(eq(serialStageFiles.stageId, stageId));
+  }
+
+  async getSerialStageFile(id: number): Promise<SerialStageFile | undefined> {
+    const result = await db.select().from(serialStageFiles).where(eq(serialStageFiles.id, id)).limit(1);
+    return result[0];
+  }
+
+  async addSerialStageFile(file: InsertSerialStageFile): Promise<SerialStageFile> {
+    const result = await db.insert(serialStageFiles).values(file).returning();
+    return result[0];
+  }
+
+  async deleteSerialStageFile(id: number): Promise<boolean> {
+    const result = await db.delete(serialStageFiles).where(eq(serialStageFiles.id, id)).returning();
+    return result.length > 0;
+  }
+
+  // ========== SERIAL PROGRESS ==========
+  async getSerialProgress(userId: string, serialChallengeId: number): Promise<SerialProgress | undefined> {
+    const result = await db
+      .select()
+      .from(serialProgress)
+      .where(and(
+        eq(serialProgress.userId, userId),
+        eq(serialProgress.serialChallengeId, serialChallengeId)
+      ))
+      .limit(1);
+    return result[0];
+  }
+
+  async getUserSerialProgressForCtf(userId: string, ctfEventId: number): Promise<SerialProgress[]> {
+    return await db
+      .select()
+      .from(serialProgress)
+      .where(and(
+        eq(serialProgress.userId, userId),
+        eq(serialProgress.ctfEventId, ctfEventId)
+      ));
+  }
+
+  async createSerialProgress(progress: InsertSerialProgress): Promise<SerialProgress> {
+    const result = await db.insert(serialProgress).values(progress).returning();
+    return result[0];
+  }
+
+  async updateSerialProgress(id: number, updates: Partial<InsertSerialProgress>): Promise<SerialProgress | undefined> {
+    const result = await db.update(serialProgress).set(updates).where(eq(serialProgress.id, id)).returning();
+    return result[0];
+  }
+
+  // ========== SERIAL STAGE SOLVES ==========
+  async createSerialStageSolve(solve: InsertSerialStageSolve): Promise<SerialStageSolve> {
+    const result = await db.insert(serialStageSolves).values(solve).returning();
+    return result[0];
+  }
+
+  async getSerialStageSolves(stageId: number): Promise<SerialStageSolve[]> {
+    return await db
+      .select()
+      .from(serialStageSolves)
+      .where(eq(serialStageSolves.stageId, stageId))
+      .orderBy(serialStageSolves.solvedAt);
+  }
+
+  async getUserStageSolve(userId: string, stageId: number): Promise<SerialStageSolve | undefined> {
+    const result = await db
+      .select()
+      .from(serialStageSolves)
+      .where(and(
+        eq(serialStageSolves.userId, userId),
+        eq(serialStageSolves.stageId, stageId)
+      ))
+      .limit(1);
+    return result[0];
+  }
+
+  async getStageFirstBlood(stageId: number): Promise<SerialStageSolve | undefined> {
+    const result = await db
+      .select()
+      .from(serialStageSolves)
+      .where(and(
+        eq(serialStageSolves.stageId, stageId),
+        eq(serialStageSolves.isFirstBlood, true)
+      ))
+      .limit(1);
+    return result[0];
   }
 }
 

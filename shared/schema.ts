@@ -132,6 +132,7 @@ export const ctfEvents = pgTable("ctf_events", {
   name: text("name").notNull(),
   description: text("description"),
   rules: text("rules"),
+  ctfType: text("ctf_type").notNull().default("jeopardy"), // jeopardy or serial
   startTime: timestamp("start_time").notNull(),
   endTime: timestamp("end_time").notNull(),
   registrationStart: timestamp("registration_start"),
@@ -653,3 +654,238 @@ export const passwordResetTokensRelations = relations(passwordResetTokens, ({ on
 
 export type PasswordResetToken = typeof passwordResetTokens.$inferSelect;
 export type InsertPasswordResetToken = typeof passwordResetTokens.$inferInsert;
+
+// ============================================================================
+// SERIAL CHALLENGES
+// ============================================================================
+export const serialChallenges = pgTable("serial_challenges", {
+  id: serial("id").primaryKey(),
+  ctfEventId: integer("ctf_event_id")
+    .notNull()
+    .references(() => ctfEvents.id, { onDelete: "cascade" }),
+  categoryId: integer("category_id")
+    .notNull()
+    .references(() => categories.id),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  authorId: varchar("author_id", { length: 36 })
+    .references(() => users.id),
+  isHidden: boolean("is_hidden").notNull().default(false),
+  releaseTime: timestamp("release_time"),
+  totalStages: integer("total_stages").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const serialChallengesRelations = relations(serialChallenges, ({ one, many }) => ({
+  ctfEvent: one(ctfEvents, {
+    fields: [serialChallenges.ctfEventId],
+    references: [ctfEvents.id],
+  }),
+  category: one(categories, {
+    fields: [serialChallenges.categoryId],
+    references: [categories.id],
+  }),
+  author: one(users, {
+    fields: [serialChallenges.authorId],
+    references: [users.id],
+  }),
+  stages: many(serialStages),
+  progress: many(serialProgress),
+}));
+
+export const insertSerialChallengeSchema = createInsertSchema(serialChallenges).omit({
+  id: true,
+  totalStages: true,
+  createdAt: true,
+});
+
+export type SerialChallenge = typeof serialChallenges.$inferSelect;
+export type InsertSerialChallenge = z.infer<typeof insertSerialChallengeSchema>;
+
+// ============================================================================
+// SERIAL STAGES
+// ============================================================================
+export const serialStages = pgTable(
+  "serial_stages",
+  {
+    id: serial("id").primaryKey(),
+    serialChallengeId: integer("serial_challenge_id")
+      .notNull()
+      .references(() => serialChallenges.id, { onDelete: "cascade" }),
+    stageOrder: integer("stage_order").notNull(),
+    name: text("name").notNull(),
+    description: text("description").notNull(),
+    flag: text("flag").notNull(),
+    points: integer("points").notNull(),
+    hint: text("hint"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    uniqueStageOrder: unique().on(table.serialChallengeId, table.stageOrder),
+  })
+);
+
+export const serialStagesRelations = relations(serialStages, ({ one, many }) => ({
+  serialChallenge: one(serialChallenges, {
+    fields: [serialStages.serialChallengeId],
+    references: [serialChallenges.id],
+  }),
+  files: many(serialStageFiles),
+  solves: many(serialStageSolves),
+}));
+
+export const insertSerialStageSchema = createInsertSchema(serialStages).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type SerialStage = typeof serialStages.$inferSelect;
+export type InsertSerialStage = z.infer<typeof insertSerialStageSchema>;
+
+// ============================================================================
+// SERIAL STAGE FILES
+// ============================================================================
+export const serialStageFiles = pgTable("serial_stage_files", {
+  id: serial("id").primaryKey(),
+  stageId: integer("stage_id")
+    .notNull()
+    .references(() => serialStages.id, { onDelete: "cascade" }),
+  filename: text("filename").notNull(),
+  originalName: text("original_name").notNull(),
+  path: text("path").notNull(),
+  size: integer("size").notNull(),
+  mimeType: text("mime_type"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const serialStageFilesRelations = relations(serialStageFiles, ({ one }) => ({
+  stage: one(serialStages, {
+    fields: [serialStageFiles.stageId],
+    references: [serialStages.id],
+  }),
+}));
+
+export const insertSerialStageFileSchema = createInsertSchema(serialStageFiles).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type SerialStageFile = typeof serialStageFiles.$inferSelect;
+export type InsertSerialStageFile = z.infer<typeof insertSerialStageFileSchema>;
+
+// ============================================================================
+// SERIAL PROGRESS
+// ============================================================================
+export const serialProgress = pgTable(
+  "serial_progress",
+  {
+    id: serial("id").primaryKey(),
+    serialChallengeId: integer("serial_challenge_id")
+      .notNull()
+      .references(() => serialChallenges.id, { onDelete: "cascade" }),
+    userId: varchar("user_id", { length: 36 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    teamId: integer("team_id")
+      .references(() => teams.id, { onDelete: "set null" }),
+    ctfEventId: integer("ctf_event_id")
+      .notNull()
+      .references(() => ctfEvents.id, { onDelete: "cascade" }),
+    currentStage: integer("current_stage").notNull().default(1),
+    totalPointsEarned: integer("total_points_earned").notNull().default(0),
+    isComplete: boolean("is_complete").notNull().default(false),
+    startedAt: timestamp("started_at").notNull().defaultNow(),
+    completedAt: timestamp("completed_at"),
+  },
+  (table) => ({
+    uniqueUserChallenge: unique().on(table.userId, table.serialChallengeId),
+  })
+);
+
+export const serialProgressRelations = relations(serialProgress, ({ one }) => ({
+  serialChallenge: one(serialChallenges, {
+    fields: [serialProgress.serialChallengeId],
+    references: [serialChallenges.id],
+  }),
+  user: one(users, {
+    fields: [serialProgress.userId],
+    references: [users.id],
+  }),
+  team: one(teams, {
+    fields: [serialProgress.teamId],
+    references: [teams.id],
+  }),
+  ctfEvent: one(ctfEvents, {
+    fields: [serialProgress.ctfEventId],
+    references: [ctfEvents.id],
+  }),
+}));
+
+export const insertSerialProgressSchema = createInsertSchema(serialProgress).omit({
+  id: true,
+  startedAt: true,
+});
+
+export type SerialProgress = typeof serialProgress.$inferSelect;
+export type InsertSerialProgress = z.infer<typeof insertSerialProgressSchema>;
+
+// ============================================================================
+// SERIAL STAGE SOLVES
+// ============================================================================
+export const serialStageSolves = pgTable(
+  "serial_stage_solves",
+  {
+    id: serial("id").primaryKey(),
+    stageId: integer("stage_id")
+      .notNull()
+      .references(() => serialStages.id, { onDelete: "cascade" }),
+    serialChallengeId: integer("serial_challenge_id")
+      .notNull()
+      .references(() => serialChallenges.id, { onDelete: "cascade" }),
+    userId: varchar("user_id", { length: 36 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    teamId: integer("team_id")
+      .references(() => teams.id, { onDelete: "set null" }),
+    ctfEventId: integer("ctf_event_id")
+      .notNull()
+      .references(() => ctfEvents.id, { onDelete: "cascade" }),
+    points: integer("points").notNull(),
+    isFirstBlood: boolean("is_first_blood").notNull().default(false),
+    solvedAt: timestamp("solved_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    uniqueUserStage: unique().on(table.userId, table.stageId),
+  })
+);
+
+export const serialStageSolvesRelations = relations(serialStageSolves, ({ one }) => ({
+  stage: one(serialStages, {
+    fields: [serialStageSolves.stageId],
+    references: [serialStages.id],
+  }),
+  serialChallenge: one(serialChallenges, {
+    fields: [serialStageSolves.serialChallengeId],
+    references: [serialChallenges.id],
+  }),
+  user: one(users, {
+    fields: [serialStageSolves.userId],
+    references: [users.id],
+  }),
+  team: one(teams, {
+    fields: [serialStageSolves.teamId],
+    references: [teams.id],
+  }),
+  ctfEvent: one(ctfEvents, {
+    fields: [serialStageSolves.ctfEventId],
+    references: [ctfEvents.id],
+  }),
+}));
+
+export const insertSerialStageSolveSchema = createInsertSchema(serialStageSolves).omit({
+  id: true,
+  solvedAt: true,
+});
+
+export type SerialStageSolve = typeof serialStageSolves.$inferSelect;
+export type InsertSerialStageSolve = z.infer<typeof insertSerialStageSolveSchema>;

@@ -2094,4 +2094,417 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
+  // ========== SERIAL CHALLENGE ROUTES ==========
+
+  // Get serial challenges for a CTF event with user progress
+  app.get("/api/ctfs/:id/serial-challenges", requireAuth, async (req, res) => {
+    try {
+      const ctfId = parseInt(req.params.id);
+      const userId = req.user!.id;
+
+      const serialChallenges = await storage.getSerialChallengesByCtfEvent(ctfId);
+
+      // Get user's progress for each serial challenge
+      const challengesWithProgress = await Promise.all(
+        serialChallenges.map(async (challenge) => {
+          const progress = await storage.getSerialProgress(userId, challenge.id);
+          return {
+            ...challenge,
+            currentStage: progress?.currentStage || 0,
+            totalPointsEarned: progress?.totalPointsEarned || 0,
+            isComplete: progress?.isComplete || false,
+            isUnlocked: progress ? true : false,
+          };
+        })
+      );
+
+      res.json(challengesWithProgress);
+    } catch (error) {
+      logger.error({ error }, "Failed to get serial challenges");
+      res.status(500).json({ error: "Failed to get serial challenges" });
+    }
+  });
+
+  // Get stages for a serial challenge
+  app.get("/api/serial-challenges/:id/stages", requireAuth, async (req, res) => {
+    try {
+      const serialChallengeId = parseInt(req.params.id);
+      const userId = req.user!.id;
+
+      const serialChallenge = await storage.getSerialChallenge(serialChallengeId);
+      if (!serialChallenge) {
+        return res.status(404).json({ error: "Serial challenge not found" });
+      }
+
+      const stages = await storage.getStagesBySerialChallenge(serialChallengeId);
+      const progress = await storage.getSerialProgress(userId, serialChallengeId);
+
+      // Determine which stage the user is on (0 if not started)
+      const currentStage = progress?.currentStage || 0;
+
+      // Map stages with locked/unlocked status
+      const stagesWithAccess = await Promise.all(
+        stages.map(async (stage) => {
+          const isUnlocked = stage.stageOrder <= currentStage;
+          const isSolved = await storage.getUserStageSolve(userId, stage.id);
+
+          if (!isUnlocked) {
+            // Return minimal info for locked stages
+            return {
+              id: stage.id,
+              stageOrder: stage.stageOrder,
+              name: stage.name,
+              points: stage.points,
+              isLocked: true,
+              isSolved: false,
+            };
+          }
+
+          // Return full details for unlocked stages
+          const files = await storage.getSerialStageFiles(stage.id);
+          return {
+            ...stage,
+            isLocked: false,
+            isSolved: !!isSolved,
+            files,
+          };
+        })
+      );
+
+      res.json(stagesWithAccess);
+    } catch (error) {
+      logger.error({ error }, "Failed to get serial stages");
+      res.status(500).json({ error: "Failed to get serial stages" });
+    }
+  });
+
+  // Get files for a specific stage
+  app.get("/api/serial-stages/:stageId/files", requireAuth, async (req, res) => {
+    try {
+      const stageId = parseInt(req.params.stageId);
+      const userId = req.user!.id;
+
+      const stage = await storage.getSerialStage(stageId);
+      if (!stage) {
+        return res.status(404).json({ error: "Stage not found" });
+      }
+
+      // Check if user has unlocked this stage
+      const serialChallenge = await storage.getSerialChallenge(stage.serialChallengeId);
+      if (!serialChallenge) {
+        return res.status(404).json({ error: "Serial challenge not found" });
+      }
+
+      const progress = await storage.getSerialProgress(userId, stage.serialChallengeId);
+      const currentStage = progress?.currentStage || 0;
+
+      if (stage.stageOrder > currentStage) {
+        return res.status(403).json({ error: "Stage is locked" });
+      }
+
+      const files = await storage.getSerialStageFiles(stageId);
+      res.json(files);
+    } catch (error) {
+      logger.error({ error }, "Failed to get stage files");
+      res.status(500).json({ error: "Failed to get stage files" });
+    }
+  });
+
+  // Submit flag for a serial stage
+  app.post("/api/submit-serial-stage", requireAuth, async (req, res) => {
+    try {
+      const { stageId, flag } = req.body;
+      if (!stageId || !flag) {
+        return res.status(400).json({ error: "Stage ID and flag required" });
+      }
+
+      const userId = req.user!.id;
+
+      const stage = await storage.getSerialStage(stageId);
+      if (!stage) {
+        return res.status(404).json({ error: "Stage not found" });
+      }
+
+      const serialChallenge = await storage.getSerialChallenge(stage.serialChallengeId);
+      if (!serialChallenge) {
+        return res.status(404).json({ error: "Serial challenge not found" });
+      }
+
+      const ctfEvent = await storage.getCtfEvent(serialChallenge.ctfEventId);
+      if (!ctfEvent) {
+        return res.status(404).json({ error: "CTF event not found" });
+      }
+
+      // Verify CTF is active
+      const now = new Date();
+      if (ctfEvent.startTime > now || ctfEvent.endTime < now) {
+        return res.status(403).json({ error: "CTF is not currently active" });
+      }
+
+      // Verify user is registered
+      const registration = await storage.getCtfRegistration(userId, ctfEvent.id);
+      if (!registration) {
+        return res.status(403).json({ error: "You must be registered for this CTF" });
+      }
+
+      // Get user's team if CTF is team-based
+      let teamId: number | undefined;
+      if (ctfEvent.isTeamBased) {
+        const team = await storage.getUserTeam(userId);
+        if (!team) {
+          return res.status(400).json({ error: "You must be in a team to participate in this CTF" });
+        }
+        teamId = team.id;
+      }
+
+      // Get or create progress
+      let progress = await storage.getSerialProgress(userId, serialChallenge.id);
+      if (!progress) {
+        progress = await storage.createSerialProgress({
+          serialChallengeId: serialChallenge.id,
+          userId,
+          teamId: teamId ?? null,
+          ctfEventId: ctfEvent.id,
+          currentStage: 1,
+          totalPointsEarned: 0,
+          isComplete: false,
+        });
+      }
+
+      // Verify stage is unlocked
+      if (stage.stageOrder > progress.currentStage) {
+        return res.status(403).json({ error: "This stage is locked" });
+      }
+
+      // Check if already solved
+      const existingSolve = await storage.getUserStageSolve(userId, stageId);
+      if (existingSolve) {
+        return res.status(400).json({ error: "You have already solved this stage" });
+      }
+
+      // Compare flags (case-insensitive, trimmed)
+      const isCorrect = flag.trim().toLowerCase() === stage.flag.trim().toLowerCase();
+
+      if (!isCorrect) {
+        return res.json({ correct: false, message: "Incorrect flag" });
+      }
+
+      // Check for first blood (per stage)
+      const existingSolves = await storage.getSerialStageSolves(stageId);
+      const isFirstBlood = existingSolves.length === 0;
+
+      // Record solve
+      await storage.createSerialStageSolve({
+        stageId,
+        serialChallengeId: serialChallenge.id,
+        userId,
+        teamId: teamId ?? null,
+        ctfEventId: ctfEvent.id,
+        points: stage.points,
+        isFirstBlood,
+      });
+
+      // Update progress
+      const allStages = await storage.getStagesBySerialChallenge(serialChallenge.id);
+      const isLastStage = stage.stageOrder === allStages.length;
+      const newTotalPoints = progress.totalPointsEarned + stage.points;
+
+      await storage.updateSerialProgress(progress.id, {
+        currentStage: isLastStage ? progress.currentStage : progress.currentStage + 1,
+        totalPointsEarned: newTotalPoints,
+        isComplete: isLastStage,
+        completedAt: isLastStage ? new Date() : undefined,
+      });
+
+      logger.info({
+        userId,
+        stageId,
+        serialChallengeId: serialChallenge.id,
+        points: stage.points,
+        isFirstBlood,
+        isLastStage,
+      }, "Serial stage solved");
+
+      res.json({
+        correct: true,
+        points: stage.points,
+        isFirstBlood,
+        isComplete: isLastStage,
+        nextStage: isLastStage ? null : stage.stageOrder + 1,
+        message: isFirstBlood
+          ? "First blood! Congratulations!"
+          : isLastStage
+            ? "Challenge complete! Congratulations!"
+            : "Correct flag! Next stage unlocked!",
+      });
+    } catch (error) {
+      logger.error({ error }, "Failed to submit serial stage flag");
+      res.status(500).json({ error: "Failed to submit flag" });
+    }
+  });
+
+  // ========== ADMIN SERIAL CHALLENGE ROUTES ==========
+
+  // Get all serial challenges
+  app.get("/api/admin/serial-challenges", requireAdmin, async (_req, res) => {
+    try {
+      const allChallenges = await storage.getAllCtfEvents();
+      const serialChallenges = [];
+
+      for (const ctf of allChallenges) {
+        const challenges = await storage.getSerialChallengesByCtfEvent(ctf.id);
+        serialChallenges.push(...challenges.map(c => ({ ...c, ctfEvent: ctf })));
+      }
+
+      res.json(serialChallenges);
+    } catch (error) {
+      logger.error({ error }, "Failed to get serial challenges");
+      res.status(500).json({ error: "Failed to get serial challenges" });
+    }
+  });
+
+  // Create serial challenge
+  app.post("/api/admin/serial-challenges", requireAdmin, sanitizeRequestBody, async (req, res) => {
+    try {
+      const challenge = await storage.createSerialChallenge(req.body);
+      res.json(challenge);
+    } catch (error) {
+      logger.error({ error }, "Failed to create serial challenge");
+      res.status(500).json({ error: "Failed to create serial challenge" });
+    }
+  });
+
+  // Update serial challenge
+  app.patch("/api/admin/serial-challenges/:id", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const updated = await storage.updateSerialChallenge(id, req.body);
+
+      if (!updated) {
+        return res.status(404).json({ error: "Serial challenge not found" });
+      }
+
+      res.json(updated);
+    } catch (error) {
+      logger.error({ error }, "Failed to update serial challenge");
+      res.status(500).json({ error: "Failed to update serial challenge" });
+    }
+  });
+
+  // Delete serial challenge
+  app.delete("/api/admin/serial-challenges/:id", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const success = await storage.deleteSerialChallenge(id);
+
+      if (!success) {
+        return res.status(404).json({ error: "Serial challenge not found" });
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      logger.error({ error }, "Failed to delete serial challenge");
+      res.status(500).json({ error: "Failed to delete serial challenge" });
+    }
+  });
+
+  // Add stage to serial challenge
+  app.post("/api/admin/serial-challenges/:id/stages", requireAdmin, sanitizeRequestBody, async (req, res) => {
+    try {
+      const serialChallengeId = parseInt(req.params.id);
+      const stage = await storage.createSerialStage({
+        ...req.body,
+        serialChallengeId,
+      });
+      res.json(stage);
+    } catch (error) {
+      logger.error({ error }, "Failed to create serial stage");
+      res.status(500).json({ error: "Failed to create serial stage" });
+    }
+  });
+
+  // Update serial stage
+  app.patch("/api/admin/serial-stages/:id", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const updated = await storage.updateSerialStage(id, req.body);
+
+      if (!updated) {
+        return res.status(404).json({ error: "Serial stage not found" });
+      }
+
+      res.json(updated);
+    } catch (error) {
+      logger.error({ error }, "Failed to update serial stage");
+      res.status(500).json({ error: "Failed to update serial stage" });
+    }
+  });
+
+  // Delete serial stage
+  app.delete("/api/admin/serial-stages/:id", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const success = await storage.deleteSerialStage(id);
+
+      if (!success) {
+        return res.status(404).json({ error: "Serial stage not found" });
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      logger.error({ error }, "Failed to delete serial stage");
+      res.status(500).json({ error: "Failed to delete serial stage" });
+    }
+  });
+
+  // Upload stage files
+  app.post("/api/admin/serial-stages/:id/files", requireAdmin, uploadMiddleware, async (req, res) => {
+    try {
+      const stageId = parseInt(req.params.id);
+
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      const file = await storage.addSerialStageFile({
+        stageId,
+        filename: req.file.filename,
+        originalName: req.file.originalname,
+        path: req.file.path,
+        size: req.file.size,
+        mimeType: req.file.mimetype,
+      });
+
+      res.json(file);
+    } catch (error) {
+      logger.error({ error }, "Failed to upload stage file");
+      res.status(500).json({ error: "Failed to upload stage file" });
+    }
+  });
+
+  // Delete stage file
+  app.delete("/api/admin/serial-stages/:stageId/files/:fileId", requireAdmin, async (req, res) => {
+    try {
+      const fileId = parseInt(req.params.fileId);
+
+      const file = await storage.getSerialStageFile(fileId);
+      if (!file) {
+        return res.status(404).json({ error: "File not found" });
+      }
+
+      // Delete file from filesystem
+      await fs.unlink(file.path);
+
+      const success = await storage.deleteSerialStageFile(fileId);
+      if (!success) {
+        return res.status(404).json({ error: "File not found" });
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      logger.error({ error }, "Failed to delete stage file");
+      res.status(500).json({ error: "Failed to delete stage file" });
+    }
+  });
+
 }

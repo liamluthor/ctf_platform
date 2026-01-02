@@ -7,6 +7,7 @@ import { Footer } from "@/components/layout/footer";
 import { CountdownTimer } from "@/components/ctf/countdown-timer";
 import { ChallengeCard } from "@/components/ctf/challenge-card";
 import { ChallengeModal } from "@/components/ctf/challenge-modal";
+import { SerialChallengesView } from "@/components/ctf/serial-challenges-view";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -340,6 +341,9 @@ export default function CtfDetailPage() {
                     </p>
                   </CardContent>
                 </Card>
+              ) : ctf.ctfType === "serial" ? (
+                // Serial CTF - Show serial challenges view
+                <SerialChallengesView ctfId={ctfId} />
               ) : challengesLoading ? (
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {[1, 2, 3, 4, 5, 6].map((i) => (

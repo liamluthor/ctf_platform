@@ -75,6 +75,7 @@ import {
   ExternalLink,
   Terminal,
   Activity,
+  List,
 } from "lucide-react";
 import { format } from "date-fns";
 import type { CtfEvent, Category, Challenge } from "@shared/schema";
@@ -88,6 +89,7 @@ function CtfEventsTab() {
     name: string;
     description: string;
     rules: string;
+    ctfType: string;
     startTime: Date | undefined;
     endTime: Date | undefined;
     isTeamBased: boolean;
@@ -98,6 +100,7 @@ function CtfEventsTab() {
     name: "",
     description: "",
     rules: "",
+    ctfType: "jeopardy",
     startTime: undefined,
     endTime: undefined,
     isTeamBased: false,
@@ -181,6 +184,7 @@ function CtfEventsTab() {
       name: "",
       description: "",
       rules: "",
+      ctfType: "jeopardy",
       startTime: now,
       endTime: oneWeekLater,
       isTeamBased: false,
@@ -196,6 +200,7 @@ function CtfEventsTab() {
       name: ctf.name,
       description: ctf.description || "",
       rules: ctf.rules || "",
+      ctfType: ctf.ctfType || "jeopardy",
       startTime: new Date(ctf.startTime),
       endTime: new Date(ctf.endTime),
       isTeamBased: ctf.isTeamBased,
@@ -257,6 +262,21 @@ function CtfEventsTab() {
                     className="bg-secondary border-white/10"
                     rows={3}
                   />
+                </div>
+                <div>
+                  <Label>CTF Type</Label>
+                  <Select
+                    value={formData.ctfType}
+                    onValueChange={(value) => setFormData({ ...formData, ctfType: value })}
+                  >
+                    <SelectTrigger className="bg-secondary border-white/10">
+                      <SelectValue placeholder="Select CTF Type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="jeopardy">Jeopardy</SelectItem>
+                      <SelectItem value="serial">Serial</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <Label>Start Time</Label>
@@ -1652,6 +1672,572 @@ function SettingsTab() {
   );
 }
 
+// ========== SERIAL CHALLENGES TAB ==========
+function SerialChallengesTab() {
+  const { toast } = useToast();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [stagesDialogOpen, setStagesDialogOpen] = useState(false);
+  const [stageFormDialogOpen, setStageFormDialogOpen] = useState(false);
+  const [editingChallenge, setEditingChallenge] = useState<any | null>(null);
+  const [selectedChallenge, setSelectedChallenge] = useState<any | null>(null);
+  const [editingStage, setEditingStage] = useState<any | null>(null);
+
+  const [formData, setFormData] = useState({
+    name: "",
+    description: "",
+    ctfEventId: "",
+    categoryId: "",
+    authorId: "",
+    isHidden: false,
+    releaseTime: undefined as Date | undefined,
+  });
+
+  const [stageFormData, setStageFormData] = useState({
+    stageOrder: "",
+    name: "",
+    description: "",
+    flag: "",
+    points: "",
+    hint: "",
+  });
+
+  // Fetch all CTFs and categories for dropdowns
+  const { data: ctfs } = useQuery<any[]>({
+    queryKey: ["/api/admin/ctfs"],
+  });
+
+  const { data: categories } = useQuery<any[]>({
+    queryKey: ["/api/categories"],
+  });
+
+  // Fetch serial challenges
+  const { data: serialChallenges, isLoading } = useQuery<any[]>({
+    queryKey: ["/api/admin/serial-challenges"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/serial-challenges", {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch serial challenges");
+      return res.json();
+    },
+  });
+
+  // Fetch stages for selected challenge
+  const { data: stages } = useQuery<any[]>({
+    queryKey: ["/api/admin/serial-challenges", selectedChallenge?.id, "stages"],
+    queryFn: async () => {
+      const res = await fetch(`/api/serial-challenges/${selectedChallenge!.id}/stages`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch stages");
+      return res.json();
+    },
+    enabled: !!selectedChallenge,
+  });
+
+  // Create serial challenge
+  const createMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await fetch("/api/admin/serial-challenges", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to create serial challenge");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Serial challenge created successfully" });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/serial-challenges"] });
+      setDialogOpen(false);
+      resetForm();
+    },
+    onError: () => toast({ title: "Failed to create serial challenge", variant: "destructive" }),
+  });
+
+  // Update serial challenge
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      const res = await fetch(`/api/admin/serial-challenges/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to update serial challenge");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Serial challenge updated successfully" });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/serial-challenges"] });
+      setDialogOpen(false);
+      resetForm();
+    },
+    onError: () => toast({ title: "Failed to update serial challenge", variant: "destructive" }),
+  });
+
+  // Delete serial challenge
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/admin/serial-challenges/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to delete serial challenge");
+    },
+    onSuccess: () => {
+      toast({ title: "Serial challenge deleted successfully" });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/serial-challenges"] });
+    },
+    onError: () => toast({ title: "Failed to delete serial challenge", variant: "destructive" }),
+  });
+
+  // Create stage
+  const createStageMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await fetch(`/api/admin/serial-challenges/${selectedChallenge!.id}/stages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to create stage");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Stage created successfully" });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/serial-challenges", selectedChallenge!.id, "stages"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/serial-challenges"] });
+      setStageFormDialogOpen(false);
+      resetStageForm();
+    },
+    onError: () => toast({ title: "Failed to create stage", variant: "destructive" }),
+  });
+
+  // Update stage
+  const updateStageMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: any }) => {
+      const res = await fetch(`/api/admin/serial-stages/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to update stage");
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Stage updated successfully" });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/serial-challenges", selectedChallenge!.id, "stages"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/serial-challenges"] });
+      setStageFormDialogOpen(false);
+      resetStageForm();
+    },
+    onError: () => toast({ title: "Failed to update stage", variant: "destructive" }),
+  });
+
+  // Delete stage
+  const deleteStageMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/admin/serial-stages/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to delete stage");
+    },
+    onSuccess: () => {
+      toast({ title: "Stage deleted successfully" });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/serial-challenges", selectedChallenge!.id, "stages"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/serial-challenges"] });
+    },
+    onError: () => toast({ title: "Failed to delete stage", variant: "destructive" }),
+  });
+
+  const resetForm = () => {
+    setFormData({
+      name: "",
+      description: "",
+      ctfEventId: "",
+      categoryId: "",
+      authorId: "",
+      isHidden: false,
+      releaseTime: undefined,
+    });
+    setEditingChallenge(null);
+  };
+
+  const resetStageForm = () => {
+    setStageFormData({
+      stageOrder: "",
+      name: "",
+      description: "",
+      flag: "",
+      points: "",
+      hint: "",
+    });
+    setEditingStage(null);
+  };
+
+  const openEditDialog = (challenge: any) => {
+    setEditingChallenge(challenge);
+    setFormData({
+      name: challenge.name,
+      description: challenge.description,
+      ctfEventId: challenge.ctfEventId.toString(),
+      categoryId: challenge.categoryId.toString(),
+      authorId: challenge.authorId || "",
+      isHidden: challenge.isHidden,
+      releaseTime: challenge.releaseTime ? new Date(challenge.releaseTime) : undefined,
+    });
+    setDialogOpen(true);
+  };
+
+  const openStagesDialog = (challenge: any) => {
+    setSelectedChallenge(challenge);
+    setStagesDialogOpen(true);
+  };
+
+  const openStageFormDialog = (stage?: any) => {
+    if (stage) {
+      setEditingStage(stage);
+      setStageFormData({
+        stageOrder: stage.stageOrder.toString(),
+        name: stage.name,
+        description: stage.description,
+        flag: stage.flag,
+        points: stage.points.toString(),
+        hint: stage.hint || "",
+      });
+    } else {
+      resetStageForm();
+      // Auto-set next stage order
+      const nextOrder = stages ? stages.length + 1 : 1;
+      setStageFormData(prev => ({ ...prev, stageOrder: nextOrder.toString() }));
+    }
+    setStageFormDialogOpen(true);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const data = {
+      ...formData,
+      ctfEventId: parseInt(formData.ctfEventId),
+      categoryId: parseInt(formData.categoryId),
+    };
+
+    if (editingChallenge) {
+      updateMutation.mutate({ id: editingChallenge.id, data });
+    } else {
+      createMutation.mutate(data);
+    }
+  };
+
+  const handleStageSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const data = {
+      ...stageFormData,
+      stageOrder: parseInt(stageFormData.stageOrder),
+      points: parseInt(stageFormData.points),
+    };
+
+    if (editingStage) {
+      updateStageMutation.mutate({ id: editingStage.id, data });
+    } else {
+      createStageMutation.mutate(data);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center p-8">
+        <Loader2 className="w-6 h-6 animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold font-orbitron">Serial Challenges</h2>
+        <Button onClick={() => { resetForm(); setDialogOpen(true); }}>
+          <Plus className="w-4 h-4 mr-2" />
+          Create Serial Challenge
+        </Button>
+      </div>
+
+      <Card>
+        <CardContent className="p-6">
+          {!serialChallenges || serialChallenges.length === 0 ? (
+            <div className="text-center text-muted-foreground py-8">
+              No serial challenges yet. Create one to get started.
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {serialChallenges.map((challenge) => (
+                <Card key={challenge.id}>
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <h3 className="font-semibold">{challenge.name}</h3>
+                        <p className="text-sm text-muted-foreground">{challenge.description}</p>
+                        <div className="flex gap-4 mt-2 text-sm">
+                          <span>CTF: {challenge.ctfEvent?.name || "Unknown"}</span>
+                          <span>Stages: {challenge.totalStages}</span>
+                          {challenge.isHidden && <Badge variant="secondary">Hidden</Badge>}
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => openStagesDialog(challenge)}>
+                          <List className="w-4 h-4 mr-1" />
+                          Manage Stages
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => openEditDialog(challenge)}>
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => deleteMutation.mutate(challenge.id)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Create/Edit Serial Challenge Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-orbitron">
+              {editingChallenge ? "Edit" : "Create"} Serial Challenge
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <Label>Name</Label>
+              <Input
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                required
+              />
+            </div>
+            <div>
+              <Label>Description</Label>
+              <Textarea
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                rows={3}
+                required
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>CTF Event</Label>
+                <Select
+                  value={formData.ctfEventId}
+                  onValueChange={(value) => setFormData({ ...formData, ctfEventId: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select CTF" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ctfs?.filter(ctf => ctf.ctfType === "serial").map((ctf) => (
+                      <SelectItem key={ctf.id} value={ctf.id.toString()}>
+                        {ctf.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Category</Label>
+                <Select
+                  value={formData.categoryId}
+                  onValueChange={(value) => setFormData({ ...formData, categoryId: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select Category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories?.map((cat) => (
+                      <SelectItem key={cat.id} value={cat.id.toString()}>
+                        {cat.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={formData.isHidden}
+                onCheckedChange={(checked) => setFormData({ ...formData, isHidden: checked })}
+              />
+              <Label>Hidden</Label>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit">
+                {editingChallenge ? "Update" : "Create"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manage Stages Dialog */}
+      <Dialog open={stagesDialogOpen} onOpenChange={setStagesDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-orbitron">
+              Manage Stages: {selectedChallenge?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Button onClick={() => openStageFormDialog()}>
+              <Plus className="w-4 h-4 mr-2" />
+              Add Stage
+            </Button>
+
+            {!stages || stages.length === 0 ? (
+              <div className="text-center text-muted-foreground py-8">
+                No stages yet. Add a stage to get started.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {stages
+                  .sort((a, b) => a.stageOrder - b.stageOrder)
+                  .map((stage) => (
+                    <Card key={stage.id}>
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <Badge>{`Stage ${stage.stageOrder}`}</Badge>
+                              <h4 className="font-semibold">{stage.name}</h4>
+                              <span className="text-sm text-muted-foreground">
+                                ({stage.points} pts)
+                              </span>
+                            </div>
+                            <p className="text-sm text-muted-foreground mt-1">
+                              {stage.description}
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openStageFormDialog(stage)}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => deleteStageMutation.mutate(stage.id)}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create/Edit Stage Dialog */}
+      <Dialog open={stageFormDialogOpen} onOpenChange={setStageFormDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-orbitron">
+              {editingStage ? "Edit" : "Add"} Stage
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleStageSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Stage Order</Label>
+                <Input
+                  type="number"
+                  value={stageFormData.stageOrder}
+                  onChange={(e) => setStageFormData({ ...stageFormData, stageOrder: e.target.value })}
+                  min={1}
+                  required
+                />
+              </div>
+              <div>
+                <Label>Points</Label>
+                <Input
+                  type="number"
+                  value={stageFormData.points}
+                  onChange={(e) => setStageFormData({ ...stageFormData, points: e.target.value })}
+                  min={0}
+                  required
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Name</Label>
+              <Input
+                value={stageFormData.name}
+                onChange={(e) => setStageFormData({ ...stageFormData, name: e.target.value })}
+                required
+              />
+            </div>
+            <div>
+              <Label>Description</Label>
+              <Textarea
+                value={stageFormData.description}
+                onChange={(e) => setStageFormData({ ...stageFormData, description: e.target.value })}
+                rows={3}
+                required
+              />
+            </div>
+            <div>
+              <Label>Flag</Label>
+              <Input
+                value={stageFormData.flag}
+                onChange={(e) => setStageFormData({ ...stageFormData, flag: e.target.value })}
+                required
+              />
+            </div>
+            <div>
+              <Label>Hint (Optional)</Label>
+              <Textarea
+                value={stageFormData.hint}
+                onChange={(e) => setStageFormData({ ...stageFormData, hint: e.target.value })}
+                rows={2}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setStageFormDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit">
+                {editingStage ? "Update" : "Create"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 // ========== CONTAINERS TAB ==========
 function ContainersTab() {
   const { toast } = useToast();
@@ -2649,6 +3235,10 @@ export default function AdminPage() {
                     <Flag className="w-4 h-4 mr-2" />
                     Challenges
                   </TabsTrigger>
+                  <TabsTrigger value="serial">
+                    <List className="w-4 h-4 mr-2" />
+                    Serial Challenges
+                  </TabsTrigger>
                   <TabsTrigger value="containers">
                     <Container className="w-4 h-4 mr-2" />
                     Containers
@@ -2672,6 +3262,9 @@ export default function AdminPage() {
                 </TabsContent>
                 <TabsContent value="challenges">
                   <ChallengesTab />
+                </TabsContent>
+                <TabsContent value="serial">
+                  <SerialChallengesTab />
                 </TabsContent>
                 <TabsContent value="containers">
                   <ContainersTab />
