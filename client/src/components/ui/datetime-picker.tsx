@@ -89,13 +89,13 @@ export function DateTimePicker({ value, onChange, placeholder = "Pick a date and
             </div>
             <div className="space-y-2">
               <Label className="text-sm font-medium">Time</Label>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 justify-end">
                 <Clock className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                 <Input
                   type="time"
                   value={time}
                   onChange={(e) => handleTimeChange(e.target.value)}
-                  className="flex-1 bg-secondary border-white/10"
+                  className="w-32 bg-secondary border-white/10"
                 />
               </div>
             </div>
