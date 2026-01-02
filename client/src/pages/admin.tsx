@@ -2504,7 +2504,7 @@ function ContainersTab() {
     },
   });
 
-  // Refresh Docker image mutation
+  // Refresh Docker image mutation (nuclear clean: remove all containers, pull fresh image)
   const refreshImageMutation = useMutation({
     mutationFn: async (containerId: number) => {
       const res = await fetch(`/api/admin/containers/${containerId}/refresh-image`, {
@@ -2522,8 +2522,8 @@ function ContainersTab() {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/deployments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/containers"] });
       toast({
-        title: "Image refreshed",
-        description: `${data.message}. Stopped ${data.stoppedDeployments} deployment(s).`,
+        title: "Nuclear refresh complete",
+        description: `Removed ${data.removedContainers} container(s), deleted ${data.deletedDeployments} deployment(s)${data.pulledImage ? ', pulled fresh image' : ''}. Ready for fresh deployment.`,
       });
     },
     onError: (error: Error) => {
@@ -2531,7 +2531,7 @@ function ContainersTab() {
     },
   });
 
-  // Deploy container mutation
+  // Deploy container mutation (smart deploy: restart if exists, create if doesn't)
   const deployContainerMutation = useMutation({
     mutationFn: async (container: any) => {
       // Get the first port's subdomain to use as instance name
@@ -2555,10 +2555,22 @@ function ContainersTab() {
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/deployments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/containers"] });
-      toast({ title: "Container deployed", description: "Container has been deployed successfully" });
+
+      // Show appropriate message based on whether container was restarted or deployed fresh
+      if (data.wasRestarted) {
+        toast({
+          title: "Container restarted",
+          description: "Existing container has been restarted successfully"
+        });
+      } else {
+        toast({
+          title: "Container deployed",
+          description: "Container has been deployed successfully"
+        });
+      }
     },
     onError: (error: Error) => {
       toast({ variant: "destructive", title: "Deploy failed", description: error.message });

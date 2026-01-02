@@ -1540,7 +1540,7 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  // Deploy container
+  // Deploy container (smart deploy: restart if exists, create if doesn't)
   app.post("/api/admin/containers/:id/deploy", requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -1572,13 +1572,64 @@ export async function registerRoutes(server: Server, app: Express) {
         return res.status(400).json({ error: "Instance name must be 63 characters or less" });
       }
 
-      const result = await containerOrchestrator.deployContainer({
-        container,
-        instanceName,
-        deployedBy: req.user!.id,
-      });
+      // Import container lifecycle for Docker check
+      const containerLifecycle = await import("./services/container/container-lifecycle");
 
-      res.status(201).json(result);
+      // Check if Docker container with this name already exists
+      const existingContainerId = await containerLifecycle.findContainerByName(instanceName);
+
+      if (existingContainerId) {
+        // Container exists - restart it
+        logger.info({ instanceName, containerId: existingContainerId }, "Restarting existing Docker container");
+
+        // Get container status
+        const status = await containerLifecycle.getContainerStatus(existingContainerId);
+        const isRunning = status?.state === "running";
+
+        // Start or restart the container
+        if (isRunning) {
+          await containerLifecycle.restartContainer(existingContainerId);
+        } else {
+          await containerLifecycle.startContainer(existingContainerId);
+        }
+
+        // Update the deployment record in database if it exists
+        const deployments = await storage.getDeploymentsByContainer(id);
+        const existingDeployment = deployments.find(d => d.instanceName === instanceName);
+
+        if (existingDeployment) {
+          await storage.updateDeployment(existingDeployment.id, {
+            status: "running",
+            startedAt: new Date(),
+            statusMessage: "Container restarted",
+          });
+        }
+
+        const accessUrl = `https://${instanceName}.strayerraptors.com`;
+
+        res.status(200).json({
+          deploymentId: existingDeployment?.id,
+          platformId: existingContainerId,
+          accessUrl,
+          message: "Container restarted successfully",
+          wasRestarted: true,
+        });
+      } else {
+        // Container doesn't exist - deploy fresh
+        logger.info({ instanceName }, "Deploying fresh container");
+
+        const result = await containerOrchestrator.deployContainer({
+          container,
+          instanceName,
+          deployedBy: req.user!.id,
+        });
+
+        res.status(201).json({
+          ...result,
+          message: "Container deployed successfully",
+          wasRestarted: false,
+        });
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       logger.error({ error: errorMessage }, "Failed to deploy container");
@@ -1586,7 +1637,7 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  // Refresh Docker image (stop deployments, remove image, pull fresh)
+  // Refresh Docker image (nuclear clean: remove ALL containers, remove image, pull fresh, delete DB records)
   app.post("/api/admin/containers/:id/refresh-image", requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
@@ -1598,40 +1649,82 @@ export async function registerRoutes(server: Server, app: Express) {
       // Get image name
       const imageName = container.imageName || `${container.name}:latest`;
 
-      // Get all active deployments for this container
+      // Get all deployments for this container (including stopped ones)
       const allDeployments = await storage.getDeploymentsByContainer(id);
-      const activeDeployments = allDeployments.filter(d => d.status === "running");
 
-      logger.info({ containerId: id, imageName, activeDeployments: activeDeployments.length }, "Refreshing Docker image");
-
-      // Stop all active deployments
-      for (const deployment of activeDeployments) {
-        try {
-          await containerOrchestrator.stopDeployment(deployment.id);
-        } catch (error) {
-          logger.error({ deploymentId: deployment.id, error }, "Failed to stop deployment during image refresh");
-          // Continue even if stop fails
-        }
-      }
+      logger.info({ containerId: id, imageName, totalDeployments: allDeployments.length }, "Nuclear refresh: removing all containers and image");
 
       // Import container lifecycle functions
       const containerLifecycle = await import("./services/container/container-lifecycle");
 
-      // Remove Docker image
+      let removedContainers = 0;
+
+      // Remove ALL Docker containers for each deployment (running or stopped)
+      for (const deployment of allDeployments) {
+        if (deployment.platformId) {
+          try {
+            // Try to stop first (in case it's running)
+            try {
+              await containerLifecycle.stopContainer(deployment.platformId);
+            } catch (stopError) {
+              // Container might already be stopped, continue
+            }
+
+            // Remove the container
+            await containerLifecycle.removeContainer(deployment.platformId, true);
+            removedContainers++;
+            logger.info({ containerId: deployment.platformId, instanceName: deployment.instanceName }, "Removed Docker container");
+          } catch (error) {
+            logger.warn({ deploymentId: deployment.id, platformId: deployment.platformId, error }, "Failed to remove container, might already be gone");
+            // Continue even if removal fails
+          }
+        }
+
+        // Delete the deployment record from database
+        try {
+          await storage.deleteDeployment(deployment.id);
+          logger.info({ deploymentId: deployment.id }, "Deleted deployment record");
+        } catch (error) {
+          logger.error({ deploymentId: deployment.id, error }, "Failed to delete deployment record");
+        }
+      }
+
+      // Remove Docker image (with force flag)
       try {
-        await containerLifecycle.removeImage(imageName, false);
+        await containerLifecycle.removeImage(imageName, true);
+        logger.info({ imageName }, "Removed Docker image");
       } catch (error) {
         logger.warn({ imageName, error }, "Failed to remove image, continuing with pull");
         // Continue even if remove fails (image might not exist)
       }
 
-      // Pull fresh image
-      await containerLifecycle.pullImage(imageName);
+      // Pull fresh image from registry
+      let pulledImage = false;
+      if (container.deploymentType === "registry") {
+        try {
+          // Determine full image name
+          let fullImageName: string;
+          if (container.registryUrl) {
+            fullImageName = `${container.registryUrl}/${container.imageName}:${container.imageTag || "latest"}`;
+          } else {
+            fullImageName = `${container.imageName}:${container.imageTag || "latest"}`;
+          }
+
+          await containerLifecycle.pullImage(fullImageName);
+          pulledImage = true;
+          logger.info({ imageName: fullImageName }, "Pulled fresh image from registry");
+        } catch (error) {
+          logger.error({ imageName, error }, "Failed to pull fresh image");
+          // Don't fail the entire operation if pull fails
+        }
+      }
 
       res.json({
         success: true,
-        message: `Image ${imageName} refreshed successfully`,
-        stoppedDeployments: activeDeployments.length,
+        message: `Nuclear refresh complete: removed ${removedContainers} container(s), cleared image, ${pulledImage ? 'pulled fresh image' : 'ready for fresh deployment'}`,
+        removedContainers,
+        deletedDeployments: allDeployments.length,
+        pulledImage,
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
