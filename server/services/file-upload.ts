@@ -112,7 +112,7 @@ export function getFilePath(filename: string): string {
   const filePath = path.join(UPLOAD_DIR, basename);
 
   // Prevent path traversal attacks
-  const normalized = path.normalize(filePath);
+  const normalized = path.resolve(filePath);
   const uploadDirResolved = path.resolve(UPLOAD_DIR);
 
   if (!normalized.startsWith(uploadDirResolved)) {
