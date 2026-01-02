@@ -2531,6 +2531,40 @@ function ContainersTab() {
     },
   });
 
+  // Deploy container mutation
+  const deployContainerMutation = useMutation({
+    mutationFn: async (container: any) => {
+      // Get the first port's subdomain to use as instance name
+      const exposedPorts = JSON.parse(container.exposedPorts || "[]");
+      const firstSubdomain = exposedPorts[0]?.subdomain;
+
+      if (!firstSubdomain) {
+        throw new Error("Subdomain is required for deployment");
+      }
+
+      const res = await fetch(`/api/admin/containers/${container.id}/deploy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ instanceName: firstSubdomain }),
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Failed to deploy container");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/deployments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/containers"] });
+      toast({ title: "Container deployed", description: "Container has been deployed successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ variant: "destructive", title: "Deploy failed", description: error.message });
+    },
+  });
+
   // Stop deployment mutation
   const stopMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -3010,6 +3044,18 @@ function ContainersTab() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => deployContainerMutation.mutate(container)}
+                          disabled={deployContainerMutation.isPending}
+                        >
+                          {deployContainerMutation.isPending ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Play className="w-4 h-4" />
+                          )}
+                        </Button>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button
