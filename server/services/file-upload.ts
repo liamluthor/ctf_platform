@@ -112,7 +112,7 @@ export function getFilePath(filename: string): string {
   const filePath = path.join(UPLOAD_DIR, basename);
 
   // Prevent path traversal attacks
-  const normalized = path.normalize(filePath);
+  const normalized = path.resolve(filePath);
   const uploadDirResolved = path.resolve(UPLOAD_DIR);
 
   if (!normalized.startsWith(uploadDirResolved)) {
@@ -125,6 +125,25 @@ export function getFilePath(filename: string): string {
   if (relativePath.includes(path.sep)) {
     logger.error({ filename, relativePath }, "File path contains subdirectory");
     throw new Error("Invalid file path");
+  }
+
+  // Check if file exists and verify it's not a symlink pointing outside uploads
+  try {
+    const stats = fs.lstatSync(normalized); // lstat doesn't follow symlinks
+    if (stats.isSymbolicLink()) {
+      // If it's a symlink, resolve it and check the target
+      const realPath = fs.realpathSync(normalized);
+      if (!realPath.startsWith(uploadDirResolved)) {
+        logger.error({ filename, normalized, realPath, uploadDirResolved }, "Symlink points outside upload directory");
+        throw new Error("Invalid file path");
+      }
+    }
+  } catch (error) {
+    // File doesn't exist yet (during upload) or other error - that's okay
+    // We only care if it's a symlink pointing outside
+    if ((error as any).code !== 'ENOENT') {
+      logger.error({ filename, error }, "Error checking file path");
+    }
   }
 
   return normalized;
