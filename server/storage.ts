@@ -165,6 +165,7 @@ export interface IStorage {
   getDeployment(id: number): Promise<ContainerDeployment | undefined>;
   getDeploymentByInstanceName(instanceName: string): Promise<ContainerDeployment | undefined>;
   getDeploymentsByContainer(containerId: number): Promise<ContainerDeployment[]>;
+  getAllDeployments(): Promise<ContainerDeployment[]>;
   getActiveDeployments(): Promise<ContainerDeployment[]>;
   createDeployment(deployment: InsertContainerDeployment): Promise<ContainerDeployment>;
   updateDeployment(id: number, updates: Partial<InsertContainerDeployment>): Promise<ContainerDeployment | undefined>;
@@ -178,6 +179,7 @@ export interface IStorage {
 
   // Container Port Mappings
   getPortMappings(deploymentId: number): Promise<ContainerPortMapping[]>;
+  getPortMappingBySubdomain(subdomain: string): Promise<ContainerPortMapping | undefined>;
   addPortMapping(mapping: InsertContainerPortMapping): Promise<ContainerPortMapping>;
   deletePortMapping(id: number): Promise<boolean>;
 
@@ -713,6 +715,13 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(containerDeployments.createdAt));
   }
 
+  async getAllDeployments(): Promise<ContainerDeployment[]> {
+    return await db
+      .select()
+      .from(containerDeployments)
+      .orderBy(desc(containerDeployments.createdAt));
+  }
+
   async getActiveDeployments(): Promise<ContainerDeployment[]> {
     return await db
       .select()
@@ -782,6 +791,15 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(containerPortMappings)
       .where(eq(containerPortMappings.deploymentId, deploymentId));
+  }
+
+  async getPortMappingBySubdomain(subdomain: string): Promise<ContainerPortMapping | undefined> {
+    const result = await db
+      .select()
+      .from(containerPortMappings)
+      .where(eq(containerPortMappings.subdomain, subdomain))
+      .limit(1);
+    return result[0];
   }
 
   async addPortMapping(mapping: InsertContainerPortMapping): Promise<ContainerPortMapping> {

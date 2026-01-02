@@ -1,0 +1,91 @@
+# Wildcard subdomain configuration for *.strayerraptors.com
+# Matches: santas-workshop.strayerraptors.com, test-123.strayerraptors.com, etc.
+
+upstream ctf_backend_wildcard {
+    server 127.0.0.1:5000;
+    keepalive 32;
+}
+
+# Main wildcard server for containerized deployments
+server {
+    listen 443 ssl http2;
+    server_name ~^(?<instance_name>[a-z0-9]([a-z0-9-]*[a-z0-9])?)\.strayerraptors\.com$;
+
+    # Wildcard SSL Configuration
+    ssl_certificate /etc/nginx/ssl/strayerraptors.com/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/strayerraptors.com/strayerraptors.com.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    # Logging
+    access_log /var/log/nginx/wildcard-containers-access.log;
+    error_log /var/log/nginx/wildcard-containers-error.log;
+
+    # All requests go to container port lookup and proxy
+    location / {
+        # Lookup host port based on instance name
+        auth_request /internal/container-port-lookup;
+        auth_request_set $backend_port $upstream_http_x_backend_port;
+
+        # Error handling
+        error_page 404 = @container_not_found;
+        error_page 500 502 503 504 = @container_error;
+
+        # Proxy directly to the container (no path stripping needed!)
+        proxy_pass http://127.0.0.1:$backend_port$request_uri;
+        proxy_http_version 1.1;
+
+        # WebSocket support
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        # Standard proxy headers
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Timeouts
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+
+        # Disable buffering
+        proxy_buffering off;
+
+        # Security headers
+        add_header X-Content-Type-Options nosniff;
+        add_header X-Frame-Options SAMEORIGIN;
+    }
+
+    # Internal location for container port lookup
+    location = /internal/container-port-lookup {
+        internal;
+
+        proxy_pass http://ctf_backend_wildcard/api/internal/container-port-lookup;
+        proxy_pass_request_body off;
+        proxy_set_header Content-Length "";
+        proxy_set_header X-Subdomain $instance_name;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    # Error pages
+    location @container_not_found {
+        default_type text/html;
+        return 404 '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>404 Not Found</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;background:#0a0a0a;color:#00ff41;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}.container{max-width:600px;text-align:center}.code{font-size:4rem;font-weight:700;margin-bottom:1rem;text-shadow:0 0 10px #00ff41}h1{font-size:1.5rem;margin-bottom:1rem}p{margin-bottom:1.5rem;opacity:.8}a{color:#00ff41;text-decoration:none;border:2px solid #00ff41;padding:12px 24px;display:inline-block;transition:all .3s}a:hover{background:#00ff41;color:#0a0a0a;box-shadow:0 0 20px #00ff41}</style></head><body><div class="container"><div class="code">404</div><h1>Container Not Found</h1><p>The container you are looking for does not exist or is not currently deployed.</p><a href="https://ctf.strayerraptors.com">Return to CTF Platform</a></div></body></html>';
+    }
+
+    location @container_error {
+        default_type text/html;
+        return 502 '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>502 Bad Gateway</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;background:#0a0a0a;color:#00ff41;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}.container{max-width:600px;text-align:center}.code{font-size:4rem;font-weight:700;margin-bottom:1rem;text-shadow:0 0 10px #00ff41}h1{font-size:1.5rem;margin-bottom:1rem}p{margin-bottom:1.5rem;opacity:.8}.info{background:rgba(0,255,65,.1);border:1px solid #00ff41;padding:15px;margin:20px 0;border-radius:4px;font-size:.9rem}a{color:#00ff41;text-decoration:none;border:2px solid #00ff41;padding:12px 24px;display:inline-block;margin-top:10px;transition:all .3s}a:hover{background:#00ff41;color:#0a0a0a;box-shadow:0 0 20px #00ff41}</style></head><body><div class="container"><div class="code">502</div><h1>Container Unavailable</h1><p>The container is not responding.</p><div class="info">This usually means the container is stopped, restarting, or encountering an error. Please try again in a moment, or contact an administrator if the problem persists.</div><a href="https://ctf.strayerraptors.com">Return to CTF Platform</a></div></body></html>';
+    }
+}
+
+# HTTP to HTTPS redirect for wildcard
+server {
+    listen 80;
+    server_name ~^(?<instance_name>[a-z0-9]([a-z0-9-]*[a-z0-9])?)\.strayerraptors\.com$;
+    return 301 https://$instance_name.strayerraptors.com$request_uri;
+}

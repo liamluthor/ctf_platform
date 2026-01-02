@@ -18,20 +18,27 @@ export interface DateTimePickerProps {
 }
 
 export function DateTimePicker({ value, onChange, placeholder = "Pick a date and time", className }: DateTimePickerProps) {
-  const [date, setDate] = React.useState<Date | undefined>(
-    value ? (typeof value === 'string' ? new Date(value) : value) : undefined
-  )
+  // Use value prop directly instead of internal state
+  const date = value ? (typeof value === 'string' ? new Date(value) : value) : undefined
+
   const [time, setTime] = React.useState<string>(
     date ? format(date, "HH:mm") : "12:00"
   )
   const [open, setOpen] = React.useState(false)
 
+  // Update time when date prop changes
+  React.useEffect(() => {
+    if (date) {
+      setTime(format(date, "HH:mm"))
+    }
+  }, [date])
+
   const handleDateSelect = (selectedDate: Date | undefined) => {
     if (selectedDate) {
       const [hours, minutes] = time.split(':').map(Number)
-      selectedDate.setHours(hours, minutes)
-      setDate(selectedDate)
-      onChange?.(selectedDate)
+      const newDate = new Date(selectedDate)
+      newDate.setHours(hours, minutes)
+      onChange?.(newDate)
     }
   }
 
@@ -41,14 +48,12 @@ export function DateTimePicker({ value, onChange, placeholder = "Pick a date and
       const [hours, minutes] = newTime.split(':').map(Number)
       const newDate = new Date(date)
       newDate.setHours(hours, minutes)
-      setDate(newDate)
       onChange?.(newDate)
     }
   }
 
   const handleNowClick = () => {
     const now = new Date()
-    setDate(now)
     setTime(format(now, "HH:mm"))
     onChange?.(now)
     setOpen(false)
@@ -79,15 +84,20 @@ export function DateTimePicker({ value, onChange, placeholder = "Pick a date and
             className="w-full"
           />
           <div className="border-t border-white/10 pt-4 space-y-3">
-            <Label className="text-sm font-medium">Time</Label>
-            <div className="flex items-center gap-3">
-              <Clock className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-              <Input
-                type="time"
-                value={time}
-                onChange={(e) => handleTimeChange(e.target.value)}
-                className="flex-1 bg-secondary border-white/10"
-              />
+            <div className="text-sm font-medium text-muted-foreground text-center">
+              {date ? format(date, "PPP") : "No date selected"}
+            </div>
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">Time</Label>
+              <div className="flex items-center gap-3">
+                <Clock className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                <Input
+                  type="time"
+                  value={time}
+                  onChange={(e) => handleTimeChange(e.target.value)}
+                  className="w-32 bg-secondary border-white/10"
+                />
+              </div>
             </div>
           </div>
           <div className="flex gap-3 pt-2">

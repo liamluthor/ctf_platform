@@ -6,7 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { usePlatformSettings, hexToHSL, hslToHex } from "@/hooks/use-platform-settings";
 import { queryClient } from "@/lib/queryClient";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -71,6 +71,7 @@ import {
   Play,
   Square,
   RotateCw,
+  RefreshCw,
   ExternalLink,
   Terminal,
   Activity,
@@ -172,12 +173,16 @@ function CtfEventsTab() {
   });
 
   const resetForm = () => {
+    const now = new Date();
+    const oneWeekLater = new Date();
+    oneWeekLater.setDate(now.getDate() + 7);
+
     setFormData({
       name: "",
       description: "",
       rules: "",
-      startTime: undefined,
-      endTime: undefined,
+      startTime: now,
+      endTime: oneWeekLater,
       isTeamBased: false,
       maxTeamSize: "",
       isPublished: false,
@@ -610,6 +615,7 @@ function ChallengesTab() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/admin/challenges/${editingChallenge?.id}/containers`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/containers"] });
       toast({ title: "Container linked successfully" });
     },
     onError: () => {
@@ -627,6 +633,7 @@ function ChallengesTab() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/admin/challenges/${editingChallenge?.id}/containers`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/containers"] });
       toast({ title: "Container unlinked successfully" });
     },
     onError: () => {
@@ -1649,10 +1656,8 @@ function SettingsTab() {
 function ContainersTab() {
   const { toast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [deployDialogOpen, setDeployDialogOpen] = useState(false);
   const [logsDialogOpen, setLogsDialogOpen] = useState(false);
   const [editingContainer, setEditingContainer] = useState<any | null>(null);
-  const [selectedContainer, setSelectedContainer] = useState<any | null>(null);
   const [selectedDeployment, setSelectedDeployment] = useState<any | null>(null);
   const [deploymentLogs, setDeploymentLogs] = useState("");
 
@@ -1670,13 +1675,9 @@ function ContainersTab() {
     cpuLimit: 256,
   });
 
-  const [portMappings, setPortMappings] = useState<Array<{ containerPort: number; serviceName: string }>>([
-    { containerPort: 80, serviceName: "" }
+  const [portMappings, setPortMappings] = useState<Array<{ containerPort: number | ""; subdomain: string }>>([
+    { containerPort: 80, subdomain: "" }
   ]);
-
-  const [deployFormData, setDeployFormData] = useState({
-    instanceName: "",
-  });
 
   // Fetch containers
   const { data: containers = [], isLoading: containersLoading, refetch: refetchContainers } = useQuery({
@@ -1694,6 +1695,16 @@ function ContainersTab() {
     queryFn: async () => {
       const res = await fetch("/api/admin/deployments", { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch deployments");
+      return res.json();
+    },
+  });
+
+  // Fetch Docker containers
+  const { data: dockerContainers = [], isLoading: dockerLoading, refetch: refetchDockerContainers } = useQuery({
+    queryKey: ["/api/admin/docker/containers"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/docker/containers", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch Docker containers");
       return res.json();
     },
   });
@@ -1717,18 +1728,51 @@ function ContainersTab() {
         const error = await res.json();
         throw new Error(error.error || "Failed to save container");
       }
-      return res.json();
+      const container = await res.json();
+
+      // If creating a new container (not editing), auto-deploy it
+      if (!editingContainer) {
+        // Get the first port's subdomain to use as instance name
+        const exposedPorts = JSON.parse(data.exposedPorts || "[]");
+        const firstSubdomain = exposedPorts[0]?.subdomain;
+
+        if (!firstSubdomain) {
+          throw new Error("Subdomain is required for deployment");
+        }
+
+        // Deploy the container
+        const deployRes = await fetch(`/api/admin/containers/${container.id}/deploy`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ instanceName: firstSubdomain }),
+        });
+
+        if (!deployRes.ok) {
+          // Deployment failed - rollback by deleting the container
+          await fetch(`/api/admin/containers/${container.id}`, {
+            method: "DELETE",
+            credentials: "include",
+          });
+
+          const deployError = await deployRes.json();
+          throw new Error(deployError.error || "Failed to deploy container. Container has been removed.");
+        }
+      }
+
+      return container;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/containers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/deployments"] });
       setDialogOpen(false);
       setEditingContainer(null);
       resetForm();
       toast({
-        title: editingContainer ? "Container updated" : "Container created",
+        title: editingContainer ? "Container updated" : "Container created and deployed",
         description: editingContainer
           ? "Container has been updated successfully"
-          : "Container has been created successfully",
+          : "Container has been created and deployed successfully",
       });
     },
     onError: (error: Error) => {
@@ -1755,36 +1799,6 @@ function ContainersTab() {
     },
     onError: (error: Error) => {
       toast({ variant: "destructive", title: "Error", description: error.message });
-    },
-  });
-
-  // Deploy container mutation
-  const deployMutation = useMutation({
-    mutationFn: async ({ containerId, instanceName }: { containerId, instanceName: string }) => {
-      const res = await fetch(`/api/admin/containers/${containerId}/deploy`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ instanceName }),
-      });
-
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || "Failed to deploy container");
-      }
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/deployments"] });
-      setDeployDialogOpen(false);
-      setDeployFormData({ instanceName: "" });
-      toast({
-        title: "Container deployed",
-        description: "Container instance has been deployed successfully",
-      });
-    },
-    onError: (error: Error) => {
-      toast({ variant: "destructive", title: "Deployment failed", description: error.message });
     },
   });
 
@@ -1851,6 +1865,47 @@ function ContainersTab() {
     },
   });
 
+  // Cleanup orphaned containers mutation
+  const cleanupOrphansMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/admin/docker/cleanup-orphans", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to cleanup orphaned containers");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/docker/containers"] });
+      toast({
+        title: "Cleanup complete",
+        description: data.message,
+      });
+    },
+    onError: (error: Error) => {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    },
+  });
+
+  // Remove single Docker container mutation
+  const removeDockerContainerMutation = useMutation({
+    mutationFn: async (containerId: string) => {
+      const res = await fetch(`/api/admin/docker/containers/${containerId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to remove Docker container");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/docker/containers"] });
+      toast({ title: "Container removed", description: "Docker container has been removed successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    },
+  });
+
   // Fetch logs function
   const fetchLogs = async (deploymentId: number) => {
     try {
@@ -1880,7 +1935,7 @@ function ContainersTab() {
       memoryLimit: 512,
       cpuLimit: 256,
     });
-    setPortMappings([{ containerPort: 80, serviceName: "" }]);
+    setPortMappings([{ containerPort: 80, subdomain: "" }]);
   };
 
   const openEditDialog = (container: any) => {
@@ -1905,13 +1960,13 @@ function ContainersTab() {
       if (Array.isArray(ports) && ports.length > 0) {
         setPortMappings(ports.map((p: any) => ({
           containerPort: typeof p === 'number' ? p : p.containerPort,
-          serviceName: typeof p === 'object' ? (p.serviceName || "") : ""
+          subdomain: typeof p === 'object' ? (p.subdomain || p.serviceName || "") : ""
         })));
       } else {
-        setPortMappings([{ containerPort: 80, serviceName: "" }]);
+        setPortMappings([{ containerPort: 80, subdomain: "" }]);
       }
     } catch {
-      setPortMappings([{ containerPort: 80, serviceName: "" }]);
+      setPortMappings([{ containerPort: 80, subdomain: "" }]);
     }
 
     setDialogOpen(true);
@@ -1920,26 +1975,21 @@ function ContainersTab() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Validate that all ports are valid numbers
+    if (portMappings.some(pm => !pm.containerPort || pm.containerPort === "")) {
+      return; // HTML5 required attribute should prevent this, but double-check
+    }
+
     // Convert port mappings to JSON format for exposedPorts field
     const exposedPortsData = portMappings.map(pm => ({
-      containerPort: pm.containerPort,
-      serviceName: pm.serviceName || undefined
+      containerPort: typeof pm.containerPort === "number" ? pm.containerPort : parseInt(pm.containerPort),
+      subdomain: pm.subdomain
     }));
 
     containerMutation.mutate({
       ...formData,
       exposedPorts: JSON.stringify(exposedPortsData)
     });
-  };
-
-  const handleDeploy = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (selectedContainer) {
-      deployMutation.mutate({
-        containerId: selectedContainer.id,
-        instanceName: deployFormData.instanceName,
-      });
-    }
   };
 
   return (
@@ -2074,7 +2124,7 @@ function ContainersTab() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => setPortMappings([...portMappings, { containerPort: 80, serviceName: "" }])}
+                    onClick={() => setPortMappings([...portMappings, { containerPort: 80, subdomain: "" }])}
                   >
                     <Plus className="w-4 h-4 mr-1" />
                     Add Port
@@ -2088,10 +2138,10 @@ function ContainersTab() {
                         <Input
                           id={`port-${index}`}
                           type="number"
-                          value={mapping.containerPort}
+                          value={mapping.containerPort || ""}
                           onChange={(e) => {
                             const updated = [...portMappings];
-                            updated[index].containerPort = parseInt(e.target.value) || 80;
+                            updated[index].containerPort = e.target.value === "" ? "" : parseInt(e.target.value);
                             setPortMappings(updated);
                           }}
                           placeholder="80"
@@ -2101,17 +2151,18 @@ function ContainersTab() {
                         />
                       </div>
                       <div className="col-span-7">
-                        <Label htmlFor={`service-${index}`} className="text-xs">Service Name (optional)</Label>
+                        <Label htmlFor={`subdomain-${index}`} className="text-xs">Subdomain (required)</Label>
                         <Input
-                          id={`service-${index}`}
-                          value={mapping.serviceName}
+                          id={`subdomain-${index}`}
+                          value={mapping.subdomain}
                           onChange={(e) => {
                             const updated = [...portMappings];
-                            updated[index].serviceName = e.target.value.toLowerCase().replace(/[^a-z0-9\-_]/g, '');
+                            updated[index].subdomain = e.target.value.toLowerCase().replace(/[^a-z0-9\-]/g, '');
                             setPortMappings(updated);
                           }}
-                          placeholder="santas-workshop"
-                          pattern="[a-z0-9\-_]*"
+                          placeholder="whamazon"
+                          pattern="[a-z0-9]([a-z0-9\-]*[a-z0-9])?"
+                          required
                         />
                       </div>
                       <div className="col-span-1">
@@ -2133,7 +2184,7 @@ function ContainersTab() {
                   ))}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Service names allow friendly URLs like /challenge/1/santas-workshop instead of /challenge/1/port/80
+                  Each port gets its own subdomain (e.g., "whamazon" becomes https://whamazon.strayerraptors.com)
                 </p>
               </div>
 
@@ -2257,18 +2308,6 @@ function ContainersTab() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedContainer(container);
-                            setDeployFormData({ instanceName: `${container.name}-${Date.now()}` });
-                            setDeployDialogOpen(true);
-                          }}
-                        >
-                          <Play className="w-4 h-4 mr-1" />
-                          Deploy
-                        </Button>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button
@@ -2459,42 +2498,115 @@ function ContainersTab() {
         </CardContent>
       </Card>
 
-      {/* Deploy Dialog */}
-      <Dialog open={deployDialogOpen} onOpenChange={setDeployDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Deploy Container</DialogTitle>
-            <DialogDescription>
-              Create a new deployment instance for {selectedContainer?.name}
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleDeploy} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="instanceName">Instance Name *</Label>
-              <Input
-                id="instanceName"
-                value={deployFormData.instanceName}
-                onChange={(e) => setDeployFormData({ instanceName: e.target.value })}
-                placeholder="my-container-instance"
-                required
-              />
+      {/* Docker Containers */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Docker Containers</CardTitle>
+            <CardDescription>All Docker containers on this host (orphans highlighted in red)</CardDescription>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetchDockerContainers()}
+              disabled={dockerLoading}
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${dockerLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => cleanupOrphansMutation.mutate()}
+              disabled={cleanupOrphansMutation.isPending || dockerContainers.filter((c: any) => c.isOrphan).length === 0}
+            >
+              {cleanupOrphansMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              <Trash2 className="w-4 h-4 mr-2" />
+              Remove All Orphans ({dockerContainers.filter((c: any) => c.isOrphan).length})
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {dockerLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin" />
             </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setDeployDialogOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={deployMutation.isPending}>
-                {deployMutation.isPending && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                Deploy
-              </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
+          ) : dockerContainers.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              No Docker containers found
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Container Name</TableHead>
+                  <TableHead>Image</TableHead>
+                  <TableHead>State</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Container ID</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {dockerContainers.map((container: any) => (
+                  <TableRow
+                    key={container.id}
+                    className={container.isOrphan ? "bg-red-500/10 border-l-4 border-l-red-500" : ""}
+                  >
+                    <TableCell className="font-medium">
+                      <div className="flex items-center gap-2">
+                        {container.name || "(unnamed)"}
+                        {container.isOrphan && (
+                          <span className="text-xs bg-red-500 text-white px-2 py-0.5 rounded">
+                            ORPHAN
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-xs text-muted-foreground font-mono">
+                        {container.image}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <span className={`text-xs px-2 py-1 rounded ${
+                        container.state === 'running' ? 'bg-green-500/20 text-green-400' :
+                        container.state === 'exited' ? 'bg-gray-500/20 text-gray-400' :
+                        'bg-yellow-500/20 text-yellow-400'
+                      }`}>
+                        {container.state}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-xs text-muted-foreground">
+                        {container.status}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-xs text-muted-foreground font-mono">
+                        {container.id.substring(0, 12)}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {container.isOrphan && (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => removeDockerContainerMutation.mutate(container.id)}
+                          disabled={removeDockerContainerMutation.isPending}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Logs Dialog */}
       <Dialog open={logsDialogOpen} onOpenChange={setLogsDialogOpen}>

@@ -31,10 +31,10 @@ export async function deployContainer(config: DeploymentConfig): Promise<Deploym
   }
 
   // Parse exposed ports from container configuration
-  // Support both old format (array of numbers) and new format (array of objects with serviceName)
+  // Support both old format (array of numbers) and new format (array of objects with subdomain)
   const exposedPortsRaw = JSON.parse(container.exposedPorts || "[]");
   const exposedPorts = Array.isArray(exposedPortsRaw)
-    ? exposedPortsRaw.map(p => typeof p === 'number' ? { containerPort: p, serviceName: undefined } : p)
+    ? exposedPortsRaw.map(p => typeof p === 'number' ? { containerPort: p, subdomain: undefined } : p)
     : [];
 
   if (exposedPorts.length === 0) {
@@ -47,7 +47,7 @@ export async function deployContainer(config: DeploymentConfig): Promise<Deploym
     containerPort: portConfig.containerPort,
     hostPort: hostPorts[idx],
     protocol: "tcp",
-    serviceName: portConfig.serviceName || undefined,
+    subdomain: portConfig.subdomain || undefined,
   }));
 
   // Get environment variables
@@ -155,7 +155,7 @@ export async function deployContainer(config: DeploymentConfig): Promise<Deploym
         containerPort: mapping.containerPort,
         hostPort: mapping.hostPort,
         protocol: mapping.protocol,
-        serviceName: mapping.serviceName,
+        subdomain: mapping.subdomain,
       });
     }
 
@@ -299,4 +299,53 @@ export async function getDeploymentStatus(deploymentId: number): Promise<{
       message: "Unknown platform",
     };
   }
+}
+
+/**
+ * List all Docker containers (including orphans)
+ */
+export async function listAllDockerContainers(): Promise<Array<{
+  id: string;
+  name: string | null;
+  image: string;
+  status: string;
+  state: string;
+  created: number;
+}>> {
+  const docker = await import("dockerode");
+  const dockerClient = new docker.default();
+
+  const containers = await dockerClient.listContainers({ all: true });
+
+  return containers.map(container => ({
+    id: container.Id,
+    name: container.Names?.[0]?.replace(/^\//, '') || null,
+    image: container.Image,
+    status: container.Status,
+    state: container.State,
+    created: container.Created,
+  }));
+}
+
+/**
+ * Remove a Docker container by ID
+ */
+export async function removeDockerContainer(containerId: string): Promise<void> {
+  const docker = await import("dockerode");
+  const dockerClient = new docker.default();
+
+  const container = dockerClient.getContainer(containerId);
+
+  try {
+    // Stop the container if it's running
+    const info = await container.inspect();
+    if (info.State.Running) {
+      await container.stop();
+    }
+  } catch (error) {
+    // Container might already be stopped, continue with removal
+  }
+
+  // Remove the container
+  await container.remove({ force: true });
 }
