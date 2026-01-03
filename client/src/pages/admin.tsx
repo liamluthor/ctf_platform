@@ -447,6 +447,8 @@ function ChallengesTab() {
   const [linkedContainers, setLinkedContainers] = useState<number[]>([]);
   const [expandedCtfs, setExpandedCtfs] = useState<Set<number>>(new Set());
   const [revealedFlags, setRevealedFlags] = useState<Set<number>>(new Set());
+  const [flagCache, setFlagCache] = useState<Map<number, string>>(new Map());
+  const [loadingFlags, setLoadingFlags] = useState<Set<number>>(new Set());
   const [sortConfig, setSortConfig] = useState<{
     key: 'name' | 'categoryName' | 'points';
     direction: 'asc' | 'desc';
@@ -474,6 +476,70 @@ function ChallengesTab() {
       }
       return { key, direction: 'asc' };
     });
+  };
+
+  // Fetch flag securely from dedicated endpoint
+  const fetchFlag = async (challengeId: number) => {
+    // Check cache first
+    if (flagCache.has(challengeId)) {
+      return flagCache.get(challengeId)!;
+    }
+
+    // Prevent duplicate requests
+    if (loadingFlags.has(challengeId)) {
+      return null;
+    }
+
+    setLoadingFlags((prev) => new Set(prev).add(challengeId));
+
+    try {
+      const res = await fetch(`/api/admin/challenges/${challengeId}/flag`, {
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to fetch flag");
+      }
+
+      const data = await res.json();
+      const flag = data.flag;
+
+      // Cache the flag
+      setFlagCache((prev) => new Map(prev).set(challengeId, flag));
+
+      return flag;
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to fetch flag",
+      });
+      return null;
+    } finally {
+      setLoadingFlags((prev) => {
+        const next = new Set(prev);
+        next.delete(challengeId);
+        return next;
+      });
+    }
+  };
+
+  // Toggle flag visibility
+  const toggleFlagReveal = async (challengeId: number) => {
+    const isRevealed = revealedFlags.has(challengeId);
+
+    if (isRevealed) {
+      // Hide the flag
+      setRevealedFlags((prev) => {
+        const next = new Set(prev);
+        next.delete(challengeId);
+        return next;
+      });
+    } else {
+      // Reveal the flag - fetch it first if not cached
+      await fetchFlag(challengeId);
+      setRevealedFlags((prev) => new Set(prev).add(challengeId));
+    }
   };
 
   const [formData, setFormData] = useState({
@@ -1061,27 +1127,20 @@ function ChallengesTab() {
                             <TableCell>
                               <div className="flex items-center gap-2">
                                 <code className="text-xs font-mono bg-secondary px-2 py-1 rounded max-w-xs truncate">
-                                  {revealedFlags.has(challenge.id)
-                                    ? challenge.flag
-                                    : "•".repeat(Math.min(challenge.flag.length, 20))}
+                                  {revealedFlags.has(challenge.id) && flagCache.has(challenge.id)
+                                    ? flagCache.get(challenge.id)
+                                    : "•".repeat(Math.min(challenge.flagLength || 20, 20))}
                                 </code>
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => {
-                                    setRevealedFlags((prev) => {
-                                      const next = new Set(prev);
-                                      if (next.has(challenge.id)) {
-                                        next.delete(challenge.id);
-                                      } else {
-                                        next.add(challenge.id);
-                                      }
-                                      return next;
-                                    });
-                                  }}
+                                  onClick={() => toggleFlagReveal(challenge.id)}
+                                  disabled={loadingFlags.has(challenge.id)}
                                   title={revealedFlags.has(challenge.id) ? "Hide flag" : "Reveal flag"}
                                 >
-                                  {revealedFlags.has(challenge.id) ? (
+                                  {loadingFlags.has(challenge.id) ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                  ) : revealedFlags.has(challenge.id) ? (
                                     <EyeOff className="w-4 h-4" />
                                   ) : (
                                     <Eye className="w-4 h-4" />

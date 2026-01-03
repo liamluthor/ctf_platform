@@ -798,7 +798,7 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
-  // Get all challenges (admin)
+  // Get all challenges (admin) - FLAGS ARE EXCLUDED FOR SECURITY
   app.get("/api/admin/challenges", requireAdmin, async (_req, res) => {
     try {
       const events = await storage.getAllCtfEvents();
@@ -808,10 +808,13 @@ export async function registerRoutes(server: Server, app: Express) {
         const challenges = await storage.getChallengesByCtfEvent(event.id);
         allChallenges.push(...challenges.map((c) => {
           const category = categories.find((cat) => cat.id === c.categoryId);
+          // SECURITY: Remove flag from response - use dedicated endpoint to retrieve flags
+          const { flag, ...challengeWithoutFlag } = c;
           return {
-            ...c,
+            ...challengeWithoutFlag,
             ctfEventName: event.name,
             categoryName: category?.name || null,
+            flagLength: flag.length, // Include flag length for UI to render dots
           };
         }));
       }
@@ -819,6 +822,31 @@ export async function registerRoutes(server: Server, app: Express) {
     } catch (error) {
       logger.error({ error }, "Failed to fetch challenges");
       res.status(500).json({ error: "Failed to fetch challenges" });
+    }
+  });
+
+  // Get challenge flag (admin only - secure endpoint for flag retrieval)
+  app.get("/api/admin/challenges/:id/flag", requireAdmin, async (req, res) => {
+    try {
+      const challengeId = parseInt(req.params.id);
+      const challenge = await storage.getChallenge(challengeId);
+
+      if (!challenge) {
+        return res.status(404).json({ error: "Challenge not found" });
+      }
+
+      // Log flag access for audit trail
+      logger.info({
+        adminId: req.user?.id,
+        adminUsername: req.user?.username,
+        challengeId,
+        challengeName: challenge.name,
+      }, "Admin accessed challenge flag");
+
+      res.json({ flag: challenge.flag });
+    } catch (error) {
+      logger.error({ error }, "Failed to fetch challenge flag");
+      res.status(500).json({ error: "Failed to fetch challenge flag" });
     }
   });
 
