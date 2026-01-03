@@ -642,6 +642,7 @@ export async function registerRoutes(server: Server, app: Express) {
       // Record submission
       await storage.createSubmission({
         challengeId,
+        ctfEventId: challenge.ctfEventId,
         userId: req.user!.id,
         teamId: teamId ?? null,
         flag: flag.trim(),
@@ -1963,6 +1964,35 @@ export async function registerRoutes(server: Server, app: Express) {
     } catch (error) {
       logger.error({ error }, "Failed to unlink container from challenge");
       res.status(500).json({ error: "Failed to unlink container from challenge" });
+    }
+  });
+
+  // Get all submissions (admin, with filtering)
+  app.get("/api/admin/submissions", requireAdmin, async (req, res) => {
+    try {
+      const {
+        ctfEventId,
+        challengeId,
+        userId,
+        isCorrect,
+        limit = 100,
+        offset = 0,
+      } = req.query;
+
+      const filters = {
+        ctfEventId: ctfEventId ? parseInt(ctfEventId as string) : undefined,
+        challengeId: challengeId ? parseInt(challengeId as string) : undefined,
+        userId: userId as string | undefined,
+        isCorrect: isCorrect !== undefined ? isCorrect === 'true' : undefined,
+        limit: Math.min(parseInt(limit as string) || 100, 500), // Max 500
+        offset: parseInt(offset as string) || 0,
+      };
+
+      const result = await storage.getAllSubmissions(filters);
+      res.json(result);
+    } catch (error) {
+      logger.error({ error }, "Failed to get submissions");
+      res.status(500).json({ error: "Failed to get submissions" });
     }
   });
 

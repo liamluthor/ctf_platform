@@ -76,6 +76,8 @@ import {
   Terminal,
   Activity,
   List,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { format } from "date-fns";
 import type { CtfEvent, Category, Challenge } from "@shared/schema";
@@ -444,6 +446,7 @@ function ChallengesTab() {
   const [editingChallenge, setEditingChallenge] = useState<Challenge | null>(null);
   const [linkedContainers, setLinkedContainers] = useState<number[]>([]);
   const [expandedCtfs, setExpandedCtfs] = useState<Set<number>>(new Set());
+  const [revealedFlags, setRevealedFlags] = useState<Set<number>>(new Set());
   const [sortConfig, setSortConfig] = useState<{
     key: 'name' | 'categoryName' | 'points';
     direction: 'asc' | 'desc';
@@ -1030,6 +1033,7 @@ function ChallengesTab() {
                             </button>
                           </TableHead>
                           <TableHead>Solves</TableHead>
+                          <TableHead>Flag</TableHead>
                           <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -1054,6 +1058,37 @@ function ChallengesTab() {
                             </TableCell>
                             <TableCell>{challenge.points}</TableCell>
                             <TableCell>{challenge.solveCount}</TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <code className="text-xs font-mono bg-secondary px-2 py-1 rounded max-w-xs truncate">
+                                  {revealedFlags.has(challenge.id)
+                                    ? challenge.flag
+                                    : "•".repeat(Math.min(challenge.flag.length, 20))}
+                                </code>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    setRevealedFlags((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(challenge.id)) {
+                                        next.delete(challenge.id);
+                                      } else {
+                                        next.add(challenge.id);
+                                      }
+                                      return next;
+                                    });
+                                  }}
+                                  title={revealedFlags.has(challenge.id) ? "Hide flag" : "Reveal flag"}
+                                >
+                                  {revealedFlags.has(challenge.id) ? (
+                                    <EyeOff className="w-4 h-4" />
+                                  ) : (
+                                    <Eye className="w-4 h-4" />
+                                  )}
+                                </Button>
+                              </div>
+                            </TableCell>
                             <TableCell className="text-right">
                               <Button
                                 variant="ghost"
@@ -1361,6 +1396,259 @@ function CategoriesTab() {
               </CardContent>
             </Card>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ========== SUBMISSIONS TAB ==========
+function SubmissionsTab() {
+  const { toast } = useToast();
+  const [filters, setFilters] = useState({
+    ctfEventId: undefined as number | undefined,
+    challengeId: undefined as number | undefined,
+    userId: undefined as string | undefined,
+    isCorrect: undefined as boolean | undefined,
+  });
+  const [page, setPage] = useState(0);
+  const limit = 50;
+
+  // Fetch all CTFs for filter dropdown
+  const { data: ctfs } = useQuery<any[]>({
+    queryKey: ["/api/admin/ctfs"],
+  });
+
+  // Fetch all challenges for filter dropdown
+  const { data: challenges } = useQuery<any[]>({
+    queryKey: ["/api/admin/challenges"],
+  });
+
+  // Build query string from filters
+  const queryString = new URLSearchParams({
+    ...(filters.ctfEventId && { ctfEventId: filters.ctfEventId.toString() }),
+    ...(filters.challengeId && { challengeId: filters.challengeId.toString() }),
+    ...(filters.userId && { userId: filters.userId }),
+    ...(filters.isCorrect !== undefined && { isCorrect: filters.isCorrect.toString() }),
+    limit: limit.toString(),
+    offset: (page * limit).toString(),
+  }).toString();
+
+  // Fetch submissions
+  const { data: submissionsData, isLoading } = useQuery<{ submissions: any[]; total: number }>({
+    queryKey: ["/api/admin/submissions", queryString],
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/submissions?${queryString}`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch submissions");
+      return res.json();
+    },
+  });
+
+  const submissions = submissionsData?.submissions || [];
+  const total = submissionsData?.total || 0;
+  const totalPages = Math.ceil(total / limit);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-orbitron">Flag Submissions</h2>
+      </div>
+
+      {/* Filters */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Filters</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="space-y-2">
+              <Label>CTF Event</Label>
+              <Select
+                value={filters.ctfEventId?.toString() || "all"}
+                onValueChange={(value) => {
+                  setFilters({
+                    ...filters,
+                    ctfEventId: value === "all" ? undefined : parseInt(value),
+                  });
+                  setPage(0);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All CTFs" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All CTFs</SelectItem>
+                  {ctfs?.map((ctf) => (
+                    <SelectItem key={ctf.id} value={ctf.id.toString()}>
+                      {ctf.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Challenge</Label>
+              <Select
+                value={filters.challengeId?.toString() || "all"}
+                onValueChange={(value) => {
+                  setFilters({
+                    ...filters,
+                    challengeId: value === "all" ? undefined : parseInt(value),
+                  });
+                  setPage(0);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All Challenges" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Challenges</SelectItem>
+                  {challenges?.map((challenge) => (
+                    <SelectItem key={challenge.id} value={challenge.id.toString()}>
+                      {challenge.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Username</Label>
+              <Input
+                placeholder="Filter by username"
+                value={filters.userId || ""}
+                onChange={(e) => {
+                  setFilters({
+                    ...filters,
+                    userId: e.target.value || undefined,
+                  });
+                  setPage(0);
+                }}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select
+                value={
+                  filters.isCorrect === undefined
+                    ? "all"
+                    : filters.isCorrect
+                      ? "correct"
+                      : "incorrect"
+                }
+                onValueChange={(value) => {
+                  setFilters({
+                    ...filters,
+                    isCorrect:
+                      value === "all" ? undefined : value === "correct",
+                  });
+                  setPage(0);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="All Submissions" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Submissions</SelectItem>
+                  <SelectItem value="correct">Correct Only</SelectItem>
+                  <SelectItem value="incorrect">Incorrect Only</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Results Count */}
+      <div className="text-sm text-muted-foreground">
+        Showing {submissions.length} of {total} submission{total !== 1 ? "s" : ""}
+      </div>
+
+      {/* Submissions Table */}
+      {isLoading ? (
+        <div className="flex justify-center p-8">
+          <Loader2 className="w-6 h-6 animate-spin" />
+        </div>
+      ) : submissions.length === 0 ? (
+        <Card>
+          <CardContent className="p-8 text-center text-muted-foreground">
+            No submissions found
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Time</TableHead>
+                <TableHead>CTF Event</TableHead>
+                <TableHead>Challenge</TableHead>
+                <TableHead>User</TableHead>
+                <TableHead>Team</TableHead>
+                <TableHead>Flag</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {submissions.map((submission) => (
+                <TableRow key={submission.id}>
+                  <TableCell className="font-mono text-sm">
+                    {new Date(submission.submittedAt).toLocaleString()}
+                  </TableCell>
+                  <TableCell>{submission.ctfEventName}</TableCell>
+                  <TableCell>{submission.challengeName}</TableCell>
+                  <TableCell>{submission.username}</TableCell>
+                  <TableCell>{submission.teamName || "-"}</TableCell>
+                  <TableCell className="font-mono text-sm max-w-xs truncate">
+                    {submission.flag}
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={submission.isCorrect ? "default" : "destructive"}
+                      className={
+                        submission.isCorrect
+                          ? "bg-green-500 hover:bg-green-600"
+                          : ""
+                      }
+                    >
+                      {submission.isCorrect ? "Correct" : "Incorrect"}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-muted-foreground">
+            Page {page + 1} of {totalPages}
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(Math.max(0, page - 1))}
+              disabled={page === 0}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
+              disabled={page >= totalPages - 1}
+            >
+              Next
+            </Button>
+          </div>
         </div>
       )}
     </div>
@@ -3421,6 +3709,10 @@ export default function AdminPage() {
                     <Users className="w-4 h-4 mr-2" />
                     Users
                   </TabsTrigger>
+                  <TabsTrigger value="submissions">
+                    <List className="w-4 h-4 mr-2" />
+                    Submissions
+                  </TabsTrigger>
                   <TabsTrigger value="categories">
                     <Palette className="w-4 h-4 mr-2" />
                     Categories
@@ -3445,6 +3737,9 @@ export default function AdminPage() {
                 </TabsContent>
                 <TabsContent value="users">
                   <UsersTab />
+                </TabsContent>
+                <TabsContent value="submissions">
+                  <SubmissionsTab />
                 </TabsContent>
                 <TabsContent value="categories">
                   <CategoriesTab />
