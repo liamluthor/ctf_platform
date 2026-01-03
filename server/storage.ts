@@ -139,6 +139,15 @@ export interface IStorage {
   createSubmission(submission: Omit<Submission, "id" | "submittedAt">): Promise<Submission>;
   getSubmissionsByChallenge(challengeId: number): Promise<Submission[]>;
   getSubmissionsByUser(userId: string): Promise<Submission[]>;
+  getSubmissionsByCtfEvent(ctfEventId: number): Promise<Submission[]>;
+  getAllSubmissions(filters?: {
+    ctfEventId?: number;
+    challengeId?: number;
+    userId?: string;
+    isCorrect?: boolean;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ submissions: any[]; total: number }>;
 
   // Solves
   createSolve(solve: Omit<Solve, "id" | "solvedAt">): Promise<Solve>;
@@ -542,6 +551,71 @@ export class DatabaseStorage implements IStorage {
       .from(submissions)
       .where(eq(submissions.userId, userId))
       .orderBy(desc(submissions.submittedAt));
+  }
+
+  async getSubmissionsByCtfEvent(ctfEventId: number): Promise<Submission[]> {
+    return await db
+      .select()
+      .from(submissions)
+      .where(eq(submissions.ctfEventId, ctfEventId))
+      .orderBy(desc(submissions.submittedAt));
+  }
+
+  async getAllSubmissions(filters?: {
+    ctfEventId?: number;
+    challengeId?: number;
+    userId?: string;
+    isCorrect?: boolean;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ submissions: any[]; total: number }> {
+    const { ctfEventId, challengeId, userId, isCorrect, limit = 100, offset = 0 } = filters || {};
+
+    // Build where conditions
+    const conditions: any[] = [];
+    if (ctfEventId !== undefined) conditions.push(eq(submissions.ctfEventId, ctfEventId));
+    if (challengeId !== undefined) conditions.push(eq(submissions.challengeId, challengeId));
+    if (userId !== undefined) conditions.push(eq(submissions.userId, userId));
+    if (isCorrect !== undefined) conditions.push(eq(submissions.isCorrect, isCorrect));
+
+    // Get total count
+    const countResult = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(submissions)
+      .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+    const total = countResult[0]?.count || 0;
+
+    // Get submissions with joined data
+    const submissionResults = await db
+      .select({
+        id: submissions.id,
+        challengeId: submissions.challengeId,
+        challengeName: challenges.name,
+        ctfEventId: submissions.ctfEventId,
+        ctfEventName: ctfEvents.name,
+        userId: submissions.userId,
+        username: users.username,
+        teamId: submissions.teamId,
+        teamName: teams.name,
+        flag: submissions.flag,
+        isCorrect: submissions.isCorrect,
+        submittedAt: submissions.submittedAt,
+      })
+      .from(submissions)
+      .leftJoin(challenges, eq(submissions.challengeId, challenges.id))
+      .leftJoin(ctfEvents, eq(submissions.ctfEventId, ctfEvents.id))
+      .leftJoin(users, eq(submissions.userId, users.id))
+      .leftJoin(teams, eq(submissions.teamId, teams.id))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(submissions.submittedAt))
+      .limit(limit)
+      .offset(offset);
+
+    return {
+      submissions: submissionResults,
+      total,
+    };
   }
 
   // ========== SOLVES ==========

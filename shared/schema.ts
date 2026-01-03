@@ -272,6 +272,9 @@ export const submissions = pgTable("submissions", {
   challengeId: integer("challenge_id")
     .notNull()
     .references(() => challenges.id, { onDelete: "cascade" }),
+  ctfEventId: integer("ctf_event_id")
+    .notNull()
+    .references(() => ctfEvents.id, { onDelete: "cascade" }),
   userId: varchar("user_id", { length: 36 })
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
@@ -286,6 +289,10 @@ export const submissionsRelations = relations(submissions, ({ one }) => ({
     fields: [submissions.challengeId],
     references: [challenges.id],
   }),
+  ctfEvent: one(ctfEvents, {
+    fields: [submissions.ctfEventId],
+    references: [ctfEvents.id],
+  }),
   user: one(users, {
     fields: [submissions.userId],
     references: [users.id],
@@ -297,6 +304,7 @@ export const submissionsRelations = relations(submissions, ({ one }) => ({
 }));
 
 export type Submission = typeof submissions.$inferSelect;
+export type InsertSubmission = typeof submissions.$inferInsert;
 
 // ============================================================================
 // SOLVES (successful solves only)
@@ -828,6 +836,56 @@ export const insertSerialProgressSchema = createInsertSchema(serialProgress).omi
 
 export type SerialProgress = typeof serialProgress.$inferSelect;
 export type InsertSerialProgress = z.infer<typeof insertSerialProgressSchema>;
+
+// ============================================================================
+// SERIAL STAGE SUBMISSIONS (all attempts)
+// ============================================================================
+export const serialStageSubmissions = pgTable("serial_stage_submissions", {
+  id: serial("id").primaryKey(),
+  stageId: integer("stage_id")
+    .notNull()
+    .references(() => serialStages.id, { onDelete: "cascade" }),
+  serialChallengeId: integer("serial_challenge_id")
+    .notNull()
+    .references(() => serialChallenges.id, { onDelete: "cascade" }),
+  ctfEventId: integer("ctf_event_id")
+    .notNull()
+    .references(() => ctfEvents.id, { onDelete: "cascade" }),
+  userId: varchar("user_id", { length: 36 })
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  teamId: integer("team_id")
+    .references(() => teams.id, { onDelete: "set null" }),
+  flag: text("flag").notNull(), // Submitted flag
+  isCorrect: boolean("is_correct").notNull(),
+  submittedAt: timestamp("submitted_at").notNull().defaultNow(),
+});
+
+export const serialStageSubmissionsRelations = relations(serialStageSubmissions, ({ one }) => ({
+  stage: one(serialStages, {
+    fields: [serialStageSubmissions.stageId],
+    references: [serialStages.id],
+  }),
+  serialChallenge: one(serialChallenges, {
+    fields: [serialStageSubmissions.serialChallengeId],
+    references: [serialChallenges.id],
+  }),
+  ctfEvent: one(ctfEvents, {
+    fields: [serialStageSubmissions.ctfEventId],
+    references: [ctfEvents.id],
+  }),
+  user: one(users, {
+    fields: [serialStageSubmissions.userId],
+    references: [users.id],
+  }),
+  team: one(teams, {
+    fields: [serialStageSubmissions.teamId],
+    references: [teams.id],
+  }),
+}));
+
+export type SerialStageSubmission = typeof serialStageSubmissions.$inferSelect;
+export type InsertSerialStageSubmission = typeof serialStageSubmissions.$inferInsert;
 
 // ============================================================================
 // SERIAL STAGE SOLVES
