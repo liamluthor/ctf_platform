@@ -16,6 +16,14 @@ declare global {
   }
 }
 
+declare module "express-session" {
+  interface SessionData {
+    userId?: string;
+    userEmail?: string;
+    userRole?: string;
+  }
+}
+
 const scryptAsync = promisify(scrypt);
 
 export async function hashPassword(password: string) {

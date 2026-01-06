@@ -3732,6 +3732,391 @@ function ContainersTab() {
   );
 }
 
+// ========== ANALYTICS TAB ==========
+function AnalyticsTab() {
+  const { toast } = useToast();
+  const [timeRange, setTimeRange] = useState("7");
+  const [excludeMyIP, setExcludeMyIP] = useState(false);
+  const [pathFilter, setPathFilter] = useState("");
+  const [ipFilter, setIpFilter] = useState("");
+  const [ctfEventFilter, setCTFEventFilter] = useState<string>("");
+  const [challengeFilter, setChallengeFilter] = useState<string>("");
+  const [activeTab, setActiveTab] = useState("overview");
+
+  // Fetch page views
+  const { data: pageViews, isLoading: loadingPageViews } = useQuery({
+    queryKey: ["admin", "analytics", "page-views", timeRange, excludeMyIP, pathFilter, ipFilter, ctfEventFilter, challengeFilter],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - parseInt(timeRange));
+
+      params.append("startDate", startDate.toISOString());
+      params.append("endDate", endDate.toISOString());
+      if (excludeMyIP) params.append("excludeMyIP", "true");
+      if (pathFilter) params.append("path", pathFilter);
+      if (ipFilter) params.append("ipAddress", ipFilter);
+      if (ctfEventFilter) params.append("ctfEventId", ctfEventFilter);
+      if (challengeFilter) params.append("challengeId", challengeFilter);
+
+      const res = await fetch(`/api/admin/analytics/page-views?${params}`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch page views");
+      return res.json();
+    },
+  });
+
+  // Fetch page views count
+  const { data: pageViewsCount, isLoading: loadingCount } = useQuery({
+    queryKey: ["admin", "analytics", "page-views-count", timeRange, excludeMyIP, pathFilter, ipFilter, ctfEventFilter, challengeFilter],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - parseInt(timeRange));
+
+      params.append("startDate", startDate.toISOString());
+      params.append("endDate", endDate.toISOString());
+      if (excludeMyIP) params.append("excludeMyIP", "true");
+      if (pathFilter) params.append("path", pathFilter);
+      if (ipFilter) params.append("ipAddress", ipFilter);
+      if (ctfEventFilter) params.append("ctfEventId", ctfEventFilter);
+      if (challengeFilter) params.append("challengeId", challengeFilter);
+
+      const res = await fetch(`/api/admin/analytics/page-views/count?${params}`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch page views count");
+      return res.json();
+    },
+  });
+
+  // Fetch error logs
+  const { data: errorLogs, isLoading: loadingErrors } = useQuery({
+    queryKey: ["admin", "analytics", "error-logs", timeRange, excludeMyIP, pathFilter, ipFilter, ctfEventFilter, challengeFilter],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - parseInt(timeRange));
+
+      params.append("startDate", startDate.toISOString());
+      params.append("endDate", endDate.toISOString());
+      if (excludeMyIP) params.append("excludeMyIP", "true");
+      if (pathFilter) params.append("path", pathFilter);
+      if (ipFilter) params.append("ipAddress", ipFilter);
+      if (ctfEventFilter) params.append("ctfEventId", ctfEventFilter);
+      if (challengeFilter) params.append("challengeId", challengeFilter);
+
+      const res = await fetch(`/api/admin/analytics/error-logs?${params}`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch error logs");
+      return res.json();
+    },
+  });
+
+  // Fetch error logs count
+  const { data: errorLogsCount, isLoading: loadingErrorsCount } = useQuery({
+    queryKey: ["admin", "analytics", "error-logs-count", timeRange, excludeMyIP, pathFilter, ipFilter, ctfEventFilter, challengeFilter],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - parseInt(timeRange));
+
+      params.append("startDate", startDate.toISOString());
+      params.append("endDate", endDate.toISOString());
+      if (excludeMyIP) params.append("excludeMyIP", "true");
+      if (pathFilter) params.append("path", pathFilter);
+      if (ipFilter) params.append("ipAddress", ipFilter);
+      if (ctfEventFilter) params.append("ctfEventId", ctfEventFilter);
+      if (challengeFilter) params.append("challengeId", challengeFilter);
+
+      const res = await fetch(`/api/admin/analytics/error-logs/count?${params}`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch error logs count");
+      return res.json();
+    },
+  });
+
+  // Fetch CTF events for filter dropdown
+  const { data: ctfEvents } = useQuery<CtfEvent[]>({
+    queryKey: ["/api/admin/ctfs"],
+  });
+
+  // Fetch challenges for filter dropdown
+  const { data: challenges } = useQuery<Challenge[]>({
+    queryKey: ["/api/admin/challenges"],
+  });
+
+  const clearFilters = () => {
+    setPathFilter("");
+    setIpFilter("");
+    setCTFEventFilter("");
+    setChallengeFilter("");
+    setExcludeMyIP(false);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Filters */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Filters</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-4">
+            <div className="flex-1 min-w-[200px]">
+              <Label>Time Range</Label>
+              <Select value={timeRange} onValueChange={setTimeRange}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">Last 24 hours</SelectItem>
+                  <SelectItem value="7">Last 7 days</SelectItem>
+                  <SelectItem value="30">Last 30 days</SelectItem>
+                  <SelectItem value="90">Last 90 days</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex-1 min-w-[200px]">
+              <Label>CTF Event</Label>
+              <Select value={ctfEventFilter} onValueChange={setCTFEventFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All CTF Events" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">All CTF Events</SelectItem>
+                  {ctfEvents?.map((ctf) => (
+                    <SelectItem key={ctf.id} value={ctf.id.toString()}>
+                      {ctf.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex-1 min-w-[200px]">
+              <Label>Challenge</Label>
+              <Select value={challengeFilter} onValueChange={setChallengeFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All Challenges" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">All Challenges</SelectItem>
+                  {challenges?.map((challenge) => (
+                    <SelectItem key={challenge.id} value={challenge.id.toString()}>
+                      {challenge.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex-1 min-w-[200px]">
+              <Label>Path Filter</Label>
+              <Input
+                placeholder="e.g., /api/challenges"
+                value={pathFilter}
+                onChange={(e) => setPathFilter(e.target.value)}
+              />
+            </div>
+            <div className="flex-1 min-w-[200px]">
+              <Label>IP Address</Label>
+              <Input
+                placeholder="Filter by IP"
+                value={ipFilter}
+                onChange={(e) => setIpFilter(e.target.value)}
+              />
+            </div>
+            <div className="flex items-end">
+              <label className="flex items-center gap-2 cursor-pointer whitespace-nowrap px-3 py-2 border rounded-md">
+                <input
+                  type="checkbox"
+                  checked={excludeMyIP}
+                  onChange={(e) => setExcludeMyIP(e.target.checked)}
+                  className="w-4 h-4 rounded"
+                />
+                <span className="text-sm">Exclude My IP</span>
+              </label>
+            </div>
+            {(pathFilter || ipFilter || ctfEventFilter || challengeFilter || excludeMyIP) && (
+              <div className="flex items-end">
+                <Button variant="outline" size="sm" onClick={clearFilters}>
+                  Clear All
+                </Button>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Total Page Views</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold">
+              {loadingCount ? <Loader2 className="w-8 h-8 animate-spin" /> : pageViewsCount?.count?.toLocaleString() || 0}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Total Errors</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-destructive">
+              {loadingErrorsCount ? <Loader2 className="w-8 h-8 animate-spin" /> : errorLogsCount?.count?.toLocaleString() || 0}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Data Tables */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList>
+          <TabsTrigger value="overview">Page Views</TabsTrigger>
+          <TabsTrigger value="errors">Errors</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview">
+          <Card>
+            <CardHeader>
+              <CardTitle>Page Views ({pageViews?.length || 0})</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {loadingPageViews ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-8 h-8 animate-spin" />
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Timestamp</TableHead>
+                        <TableHead>Path</TableHead>
+                        <TableHead>Method</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>IP Address</TableHead>
+                        <TableHead>User ID</TableHead>
+                        <TableHead>CTF</TableHead>
+                        <TableHead>Challenge</TableHead>
+                        <TableHead>Response Time</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {pageViews?.slice(0, 100).map((view: any, idx: number) => (
+                        <TableRow key={idx}>
+                          <TableCell className="text-xs">{new Date(view.timestamp).toLocaleString()}</TableCell>
+                          <TableCell className="text-xs font-mono">{view.path}</TableCell>
+                          <TableCell>
+                            <Badge variant={view.method === "GET" ? "outline" : "default"} className="text-xs">
+                              {view.method}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={view.statusCode >= 400 ? "destructive" : "default"} className="text-xs">
+                              {view.statusCode}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-xs font-mono">{view.ipAddress}</TableCell>
+                          <TableCell className="text-xs">{view.userId || "-"}</TableCell>
+                          <TableCell className="text-xs">{view.ctfEventId || "-"}</TableCell>
+                          <TableCell className="text-xs">{view.challengeId || "-"}</TableCell>
+                          <TableCell className="text-xs">{view.responseTime ? `${view.responseTime}ms` : "-"}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  {pageViews?.length === 0 && (
+                    <div className="text-center py-8 text-muted-foreground">No page views found</div>
+                  )}
+                  {pageViews?.length > 100 && (
+                    <div className="text-center py-4 text-sm text-muted-foreground">
+                      Showing first 100 of {pageViews.length} results
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="errors">
+          <Card>
+            <CardHeader>
+              <CardTitle>Error Logs ({errorLogs?.length || 0})</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {loadingErrors ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-8 h-8 animate-spin" />
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Timestamp</TableHead>
+                        <TableHead>Path</TableHead>
+                        <TableHead>Method</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Error Message</TableHead>
+                        <TableHead>IP Address</TableHead>
+                        <TableHead>User ID</TableHead>
+                        <TableHead>CTF</TableHead>
+                        <TableHead>Challenge</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {errorLogs?.slice(0, 100).map((error: any, idx: number) => (
+                        <TableRow key={idx}>
+                          <TableCell className="text-xs">{new Date(error.timestamp).toLocaleString()}</TableCell>
+                          <TableCell className="text-xs font-mono">{error.path}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="text-xs">
+                              {error.method}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="destructive" className="text-xs">
+                              {error.statusCode}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-xs max-w-xs truncate">{error.errorMessage || "-"}</TableCell>
+                          <TableCell className="text-xs font-mono">{error.ipAddress}</TableCell>
+                          <TableCell className="text-xs">{error.userId || "-"}</TableCell>
+                          <TableCell className="text-xs">{error.ctfEventId || "-"}</TableCell>
+                          <TableCell className="text-xs">{error.challengeId || "-"}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  {errorLogs?.length === 0 && (
+                    <div className="text-center py-8 text-muted-foreground">No errors found</div>
+                  )}
+                  {errorLogs?.length > 100 && (
+                    <div className="text-center py-4 text-sm text-muted-foreground">
+                      Showing first 100 of {errorLogs.length} results
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
 // ========== MAIN ADMIN PAGE ==========
 export default function AdminPage() {
   return (
@@ -3776,6 +4161,10 @@ export default function AdminPage() {
                     <Palette className="w-4 h-4 mr-2" />
                     Categories
                   </TabsTrigger>
+                  <TabsTrigger value="analytics">
+                    <Activity className="w-4 h-4 mr-2" />
+                    Analytics
+                  </TabsTrigger>
                   <TabsTrigger value="settings">
                     <Settings className="w-4 h-4 mr-2" />
                     Settings
@@ -3802,6 +4191,9 @@ export default function AdminPage() {
                 </TabsContent>
                 <TabsContent value="categories">
                   <CategoriesTab />
+                </TabsContent>
+                <TabsContent value="analytics">
+                  <AnalyticsTab />
                 </TabsContent>
                 <TabsContent value="settings">
                   <SettingsTab />

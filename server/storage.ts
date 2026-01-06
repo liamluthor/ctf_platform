@@ -40,6 +40,10 @@ import {
   type InsertSerialProgress,
   type SerialStageSolve,
   type InsertSerialStageSolve,
+  type PageView,
+  type InsertPageView,
+  type ErrorLog,
+  type InsertErrorLog,
   users,
   teams,
   teamMembers,
@@ -62,10 +66,12 @@ import {
   serialStageFiles,
   serialProgress,
   serialStageSolves,
+  pageViews,
+  errorLogs,
 } from "@shared/schema";
 import { platformSettingsService } from "./services/platform-settings";
 import { db } from "./db";
-import { eq, desc, and, sql, gte, lte, or } from "drizzle-orm";
+import { eq, desc, and, sql, gte, lte, or, ne, count } from "drizzle-orm";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
 import { randomBytes } from "crypto";
@@ -1224,6 +1230,230 @@ export class DatabaseStorage implements IStorage {
       .limit(1);
     return result[0];
   }
+
+  // ========== ANALYTICS: PAGE VIEWS ==========
+  async logPageView(view: InsertPageView): Promise<PageView> {
+    const result = await db.insert(pageViews).values(view).returning();
+    return result[0];
+  }
+
+  async getPageViews(filters: {
+    startDate?: Date;
+    endDate?: Date;
+    path?: string;
+    ipAddress?: string;
+    userId?: string;
+    ctfEventId?: number;
+    challengeId?: number;
+  }): Promise<PageView[]> {
+    const conditions = [];
+
+    if (filters.startDate) {
+      conditions.push(gte(pageViews.timestamp, filters.startDate));
+    }
+    if (filters.endDate) {
+      conditions.push(lte(pageViews.timestamp, filters.endDate));
+    }
+    if (filters.path) {
+      conditions.push(eq(pageViews.path, filters.path));
+    }
+    if (filters.ipAddress) {
+      // Support exclusion with ! prefix
+      if (filters.ipAddress.startsWith('!')) {
+        const excludeIp = filters.ipAddress.substring(1);
+        conditions.push(ne(pageViews.ipAddress, excludeIp));
+      } else {
+        conditions.push(eq(pageViews.ipAddress, filters.ipAddress));
+      }
+    }
+    if (filters.userId) {
+      conditions.push(eq(pageViews.userId, filters.userId));
+    }
+    if (filters.ctfEventId) {
+      conditions.push(eq(pageViews.ctfEventId, filters.ctfEventId));
+    }
+    if (filters.challengeId) {
+      conditions.push(eq(pageViews.challengeId, filters.challengeId));
+    }
+
+    const query = db
+      .select()
+      .from(pageViews)
+      .orderBy(desc(pageViews.timestamp));
+
+    if (conditions.length > 0) {
+      return await query.where(and(...conditions));
+    }
+
+    return await query;
+  }
+
+  async getPageViewsCount(filters: {
+    startDate?: Date;
+    endDate?: Date;
+    path?: string;
+    ipAddress?: string;
+    userId?: string;
+    ctfEventId?: number;
+    challengeId?: number;
+  }): Promise<number> {
+    const conditions = [];
+
+    if (filters.startDate) {
+      conditions.push(gte(pageViews.timestamp, filters.startDate));
+    }
+    if (filters.endDate) {
+      conditions.push(lte(pageViews.timestamp, filters.endDate));
+    }
+    if (filters.path) {
+      conditions.push(eq(pageViews.path, filters.path));
+    }
+    if (filters.ipAddress) {
+      // Support exclusion with ! prefix
+      if (filters.ipAddress.startsWith('!')) {
+        const excludeIp = filters.ipAddress.substring(1);
+        conditions.push(ne(pageViews.ipAddress, excludeIp));
+      } else {
+        conditions.push(eq(pageViews.ipAddress, filters.ipAddress));
+      }
+    }
+    if (filters.userId) {
+      conditions.push(eq(pageViews.userId, filters.userId));
+    }
+    if (filters.ctfEventId) {
+      conditions.push(eq(pageViews.ctfEventId, filters.ctfEventId));
+    }
+    if (filters.challengeId) {
+      conditions.push(eq(pageViews.challengeId, filters.challengeId));
+    }
+
+    let query = db.select({ count: count() }).from(pageViews);
+
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
+    }
+
+    const result = await query;
+    return result[0]?.count || 0;
+  }
+
+  // ========== ANALYTICS: ERROR LOGS ==========
+  async logError(error: InsertErrorLog): Promise<ErrorLog> {
+    const result = await db.insert(errorLogs).values(error).returning();
+    return result[0];
+  }
+
+  async getErrorLogs(filters: {
+    startDate?: Date;
+    endDate?: Date;
+    path?: string;
+    ipAddress?: string;
+    userId?: string;
+    ctfEventId?: number;
+    challengeId?: number;
+    statusCode?: number;
+  }): Promise<ErrorLog[]> {
+    const conditions = [];
+
+    if (filters.startDate) {
+      conditions.push(gte(errorLogs.timestamp, filters.startDate));
+    }
+    if (filters.endDate) {
+      conditions.push(lte(errorLogs.timestamp, filters.endDate));
+    }
+    if (filters.path) {
+      conditions.push(eq(errorLogs.path, filters.path));
+    }
+    if (filters.ipAddress) {
+      // Support exclusion with ! prefix
+      if (filters.ipAddress.startsWith('!')) {
+        const excludeIp = filters.ipAddress.substring(1);
+        conditions.push(ne(errorLogs.ipAddress, excludeIp));
+      } else {
+        conditions.push(eq(errorLogs.ipAddress, filters.ipAddress));
+      }
+    }
+    if (filters.userId) {
+      conditions.push(eq(errorLogs.userId, filters.userId));
+    }
+    if (filters.ctfEventId) {
+      conditions.push(eq(errorLogs.ctfEventId, filters.ctfEventId));
+    }
+    if (filters.challengeId) {
+      conditions.push(eq(errorLogs.challengeId, filters.challengeId));
+    }
+    if (filters.statusCode) {
+      conditions.push(eq(errorLogs.statusCode, filters.statusCode));
+    }
+
+    const query = db
+      .select()
+      .from(errorLogs)
+      .orderBy(desc(errorLogs.timestamp));
+
+    if (conditions.length > 0) {
+      return await query.where(and(...conditions));
+    }
+
+    return await query;
+  }
+
+  async getErrorLogsCount(filters: {
+    startDate?: Date;
+    endDate?: Date;
+    path?: string;
+    ipAddress?: string;
+    userId?: string;
+    ctfEventId?: number;
+    challengeId?: number;
+    statusCode?: number;
+  }): Promise<number> {
+    const conditions = [];
+
+    if (filters.startDate) {
+      conditions.push(gte(errorLogs.timestamp, filters.startDate));
+    }
+    if (filters.endDate) {
+      conditions.push(lte(errorLogs.timestamp, filters.endDate));
+    }
+    if (filters.path) {
+      conditions.push(eq(errorLogs.path, filters.path));
+    }
+    if (filters.ipAddress) {
+      // Support exclusion with ! prefix
+      if (filters.ipAddress.startsWith('!')) {
+        const excludeIp = filters.ipAddress.substring(1);
+        conditions.push(ne(errorLogs.ipAddress, excludeIp));
+      } else {
+        conditions.push(eq(errorLogs.ipAddress, filters.ipAddress));
+      }
+    }
+    if (filters.userId) {
+      conditions.push(eq(errorLogs.userId, filters.userId));
+    }
+    if (filters.ctfEventId) {
+      conditions.push(eq(errorLogs.ctfEventId, filters.ctfEventId));
+    }
+    if (filters.challengeId) {
+      conditions.push(eq(errorLogs.challengeId, filters.challengeId));
+    }
+    if (filters.statusCode) {
+      conditions.push(eq(errorLogs.statusCode, filters.statusCode));
+    }
+
+    let query = db.select({ count: count() }).from(errorLogs);
+
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
+    }
+
+    const result = await query;
+    return result[0]?.count || 0;
+  }
 }
 
 export const storage = new DatabaseStorage();
+
+// Export analytics functions for use in middleware
+export const logPageView = (view: InsertPageView) => storage.logPageView(view);
+export const logError = (error: InsertErrorLog) => storage.logError(error);

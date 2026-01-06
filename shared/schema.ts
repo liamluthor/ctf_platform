@@ -947,3 +947,75 @@ export const insertSerialStageSolveSchema = createInsertSchema(serialStageSolves
 
 export type SerialStageSolve = typeof serialStageSolves.$inferSelect;
 export type InsertSerialStageSolve = z.infer<typeof insertSerialStageSolveSchema>;
+
+// ============================================================================
+// ANALYTICS: PAGE VIEWS
+// ============================================================================
+export const pageViews = pgTable("page_views", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id", { length: 36 }).references(() => users.id, { onDelete: "set null" }),
+  ctfEventId: integer("ctf_event_id").references(() => ctfEvents.id, { onDelete: "set null" }),
+  challengeId: integer("challenge_id").references(() => challenges.id, { onDelete: "set null" }),
+  path: text("path").notNull(),
+  method: text("method").notNull(),
+  statusCode: integer("status_code").notNull(),
+  ipAddress: text("ip_address").notNull(),
+  userAgent: text("user_agent"),
+  referer: text("referer"),
+  responseTime: integer("response_time"), // in milliseconds
+  timestamp: timestamp("timestamp").notNull().defaultNow(),
+});
+
+export const pageViewsRelations = relations(pageViews, ({ one }) => ({
+  user: one(users, {
+    fields: [pageViews.userId],
+    references: [users.id],
+  }),
+  ctfEvent: one(ctfEvents, {
+    fields: [pageViews.ctfEventId],
+    references: [ctfEvents.id],
+  }),
+  challenge: one(challenges, {
+    fields: [pageViews.challengeId],
+    references: [challenges.id],
+  }),
+}));
+
+export type PageView = typeof pageViews.$inferSelect;
+export type InsertPageView = typeof pageViews.$inferInsert;
+
+// ============================================================================
+// ANALYTICS: ERROR LOGS
+// ============================================================================
+export const errorLogs = pgTable("error_logs", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id", { length: 36 }).references(() => users.id, { onDelete: "set null" }),
+  ctfEventId: integer("ctf_event_id").references(() => ctfEvents.id, { onDelete: "set null" }),
+  challengeId: integer("challenge_id").references(() => challenges.id, { onDelete: "set null" }),
+  path: text("path").notNull(),
+  method: text("method").notNull(),
+  statusCode: integer("status_code").notNull(),
+  errorMessage: text("error_message"),
+  ipAddress: text("ip_address").notNull(),
+  userAgent: text("user_agent"),
+  referer: text("referer"),
+  timestamp: timestamp("timestamp").notNull().defaultNow(),
+});
+
+export const errorLogsRelations = relations(errorLogs, ({ one }) => ({
+  user: one(users, {
+    fields: [errorLogs.userId],
+    references: [users.id],
+  }),
+  ctfEvent: one(ctfEvents, {
+    fields: [errorLogs.ctfEventId],
+    references: [ctfEvents.id],
+  }),
+  challenge: one(challenges, {
+    fields: [errorLogs.challengeId],
+    references: [challenges.id],
+  }),
+}));
+
+export type ErrorLog = typeof errorLogs.$inferSelect;
+export type InsertErrorLog = typeof errorLogs.$inferInsert;
