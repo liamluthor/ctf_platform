@@ -78,12 +78,16 @@ import {
   List,
   Eye,
   EyeOff,
+  ChevronLeft,
+  ChevronsLeft,
+  ChevronsRight,
 } from "lucide-react";
 import { format } from "date-fns";
 import type { CtfEvent, Category, Challenge } from "@shared/schema";
+import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip as RechartsTooltip } from 'recharts';
 
 // ========== CTF EVENTS TAB ==========
-function CtfEventsTab() {
+function CtfEventsTab({ onViewChallenges }: { onViewChallenges: (ctfId: number, ctfName: string, ctfType: string) => void }) {
   const { toast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingCtf, setEditingCtf] = useState<CtfEvent | null>(null);
@@ -363,6 +367,7 @@ function CtfEventsTab() {
               <TableHead>Dates</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Challenges</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -384,6 +389,16 @@ function CtfEventsTab() {
                   <Badge variant={ctf.isPublished ? "default" : "secondary"}>
                     {ctf.isPublished ? "Published" : "Draft"}
                   </Badge>
+                </TableCell>
+                <TableCell>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onViewChallenges(ctf.id, ctf.name, ctf.ctfType || 'jeopardy')}
+                  >
+                    <Flag className="w-4 h-4 mr-2" />
+                    Challenges
+                  </Button>
                 </TableCell>
                 <TableCell className="text-right">
                   <Button variant="ghost" size="sm" onClick={() => openEditDialog(ctf)}>
@@ -438,7 +453,7 @@ function formatFileSize(bytes: number): string {
 }
 
 // ========== CHALLENGES TAB ==========
-function ChallengesTab() {
+function ChallengesTab({ ctfId }: { ctfId?: number | null }) {
   const { toast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [filesDialogOpen, setFilesDialogOpen] = useState(false);
@@ -453,6 +468,13 @@ function ChallengesTab() {
     key: 'name' | 'categoryName' | 'points';
     direction: 'asc' | 'desc';
   } | null>(null);
+
+  // Auto-expand the CTF when viewing a filtered view
+  useEffect(() => {
+    if (ctfId) {
+      setExpandedCtfs(new Set([ctfId]));
+    }
+  }, [ctfId]);
 
   const toggleCtfExpanded = (ctfId: number) => {
     setExpandedCtfs(prev => {
@@ -1027,8 +1049,13 @@ function ChallengesTab() {
         <div className="space-y-2">
           {/* Group challenges by CTF */}
           {(() => {
+            // Filter challenges by ctfId if provided
+            const filteredChallenges = ctfId
+              ? challenges?.filter(c => c.ctfEventId === ctfId)
+              : challenges;
+
             // Group challenges by ctfEventId
-            const grouped = challenges?.reduce((acc, challenge) => {
+            const grouped = filteredChallenges?.reduce((acc, challenge) => {
               const key = challenge.ctfEventId;
               if (!acc[key]) {
                 acc[key] = {
@@ -1036,9 +1063,9 @@ function ChallengesTab() {
                   challenges: [],
                 };
               }
-              acc[key].challenges.push(challenge);
+              acc[key]!.challenges.push(challenge);
               return acc;
-            }, {} as Record<number, { ctfName: string; challenges: typeof challenges }>);
+            }, {} as Record<number, { ctfName: string; challenges: any[] }>);
 
             if (!grouped) return null;
 
@@ -1105,7 +1132,7 @@ function ChallengesTab() {
                       </TableHeader>
                       <TableBody>
                         {(() => {
-                          let sorted = [...ctfChallenges];
+                          let sorted = [...(ctfChallenges || [])];
                           if (sortConfig) {
                             sorted.sort((a, b) => {
                               const aVal = a[sortConfig.key] ?? '';
@@ -2024,7 +2051,7 @@ function SettingsTab() {
 }
 
 // ========== SERIAL CHALLENGES TAB ==========
-function SerialChallengesTab() {
+function SerialChallengesTab({ ctfId }: { ctfId?: number | null }) {
   const { toast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [stagesDialogOpen, setStagesDialogOpen] = useState(false);
@@ -2381,7 +2408,9 @@ function SerialChallengesTab() {
             </div>
           ) : (
             <div className="space-y-4">
-              {serialChallenges.map((challenge) => (
+              {serialChallenges
+                .filter(challenge => !ctfId || challenge.ctfEventId === ctfId)
+                .map((challenge) => (
                 <Card key={challenge.id}>
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
@@ -3071,7 +3100,7 @@ function ContainersTab() {
     e.preventDefault();
 
     // Validate that all ports are valid numbers
-    if (portMappings.some(pm => !pm.containerPort || pm.containerPort === "")) {
+    if (portMappings.some(pm => !pm.containerPort || String(pm.containerPort) === "")) {
       return; // HTML5 required attribute should prevent this, but double-check
     }
 
@@ -3732,8 +3761,662 @@ function ContainersTab() {
   );
 }
 
+// ========== PAGINATION COMPONENT ==========
+function PaginationControls({
+  currentPage,
+  totalPages,
+  onPageChange
+}: {
+  currentPage: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-sm text-muted-foreground">
+        Page {currentPage} of {totalPages}
+      </span>
+      <div className="flex gap-1">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(1)}
+          disabled={currentPage === 1}
+        >
+          <ChevronsLeft className="w-4 h-4" />
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+          disabled={currentPage === 1}
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
+          disabled={currentPage === totalPages}
+        >
+          <ChevronRight className="w-4 h-4" />
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(totalPages)}
+          disabled={currentPage === totalPages}
+        >
+          <ChevronsRight className="w-4 h-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ========== ANALYTICS TAB ==========
+function AnalyticsTab() {
+  const { toast } = useToast();
+  const [timeRange, setTimeRange] = useState("7");
+  const [excludeMyIP, setExcludeMyIP] = useState(false);
+  const [pathFilter, setPathFilter] = useState("");
+  const [ipFilter, setIpFilter] = useState("");
+  const [ctfEventFilter, setCTFEventFilter] = useState<string>("all");
+  const [challengeFilter, setChallengeFilter] = useState<string>("all");
+  const [activeTab, setActiveTab] = useState("overview");
+  const [pageViewsPage, setPageViewsPage] = useState(1);
+  const [errorLogsPage, setErrorLogsPage] = useState(1);
+  const pageSize = 50;
+
+  // Fetch page views
+  const { data: pageViews, isLoading: loadingPageViews } = useQuery({
+    queryKey: ["admin", "analytics", "page-views", timeRange, excludeMyIP, pathFilter, ipFilter, ctfEventFilter, challengeFilter],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - parseInt(timeRange));
+
+      params.append("startDate", startDate.toISOString());
+      params.append("endDate", endDate.toISOString());
+      if (excludeMyIP) params.append("excludeMyIP", "true");
+      if (pathFilter) params.append("path", pathFilter);
+      if (ipFilter) params.append("ipAddress", ipFilter);
+      if (ctfEventFilter && ctfEventFilter !== "all") params.append("ctfEventId", ctfEventFilter);
+      if (challengeFilter && challengeFilter !== "all") params.append("challengeId", challengeFilter);
+
+      const res = await fetch(`/api/admin/analytics/page-views?${params}`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch page views");
+      return res.json();
+    },
+  });
+
+  // Fetch page views count
+  const { data: pageViewsCount, isLoading: loadingCount } = useQuery({
+    queryKey: ["admin", "analytics", "page-views-count", timeRange, excludeMyIP, pathFilter, ipFilter, ctfEventFilter, challengeFilter],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - parseInt(timeRange));
+
+      params.append("startDate", startDate.toISOString());
+      params.append("endDate", endDate.toISOString());
+      if (excludeMyIP) params.append("excludeMyIP", "true");
+      if (pathFilter) params.append("path", pathFilter);
+      if (ipFilter) params.append("ipAddress", ipFilter);
+      if (ctfEventFilter && ctfEventFilter !== "all") params.append("ctfEventId", ctfEventFilter);
+      if (challengeFilter && challengeFilter !== "all") params.append("challengeId", challengeFilter);
+
+      const res = await fetch(`/api/admin/analytics/page-views/count?${params}`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch page views count");
+      return res.json();
+    },
+  });
+
+  // Fetch error logs
+  const { data: errorLogs, isLoading: loadingErrors } = useQuery({
+    queryKey: ["admin", "analytics", "error-logs", timeRange, excludeMyIP, pathFilter, ipFilter, ctfEventFilter, challengeFilter],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - parseInt(timeRange));
+
+      params.append("startDate", startDate.toISOString());
+      params.append("endDate", endDate.toISOString());
+      if (excludeMyIP) params.append("excludeMyIP", "true");
+      if (pathFilter) params.append("path", pathFilter);
+      if (ipFilter) params.append("ipAddress", ipFilter);
+      if (ctfEventFilter && ctfEventFilter !== "all") params.append("ctfEventId", ctfEventFilter);
+      if (challengeFilter && challengeFilter !== "all") params.append("challengeId", challengeFilter);
+
+      const res = await fetch(`/api/admin/analytics/error-logs?${params}`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch error logs");
+      return res.json();
+    },
+  });
+
+  // Fetch error logs count
+  const { data: errorLogsCount, isLoading: loadingErrorsCount } = useQuery({
+    queryKey: ["admin", "analytics", "error-logs-count", timeRange, excludeMyIP, pathFilter, ipFilter, ctfEventFilter, challengeFilter],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - parseInt(timeRange));
+
+      params.append("startDate", startDate.toISOString());
+      params.append("endDate", endDate.toISOString());
+      if (excludeMyIP) params.append("excludeMyIP", "true");
+      if (pathFilter) params.append("path", pathFilter);
+      if (ipFilter) params.append("ipAddress", ipFilter);
+      if (ctfEventFilter && ctfEventFilter !== "all") params.append("ctfEventId", ctfEventFilter);
+      if (challengeFilter && challengeFilter !== "all") params.append("challengeId", challengeFilter);
+
+      const res = await fetch(`/api/admin/analytics/error-logs/count?${params}`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to fetch error logs count");
+      return res.json();
+    },
+  });
+
+  // Fetch CTF events for filter dropdown
+  const { data: ctfEvents } = useQuery<CtfEvent[]>({
+    queryKey: ["/api/admin/ctfs"],
+  });
+
+  // Fetch challenges for filter dropdown
+  const { data: challenges } = useQuery<Challenge[]>({
+    queryKey: ["/api/admin/challenges"],
+  });
+
+  const clearFilters = () => {
+    setPathFilter("");
+    setIpFilter("");
+    setCTFEventFilter("all");
+    setChallengeFilter("all");
+    setExcludeMyIP(false);
+  };
+
+  // Prepare chart data
+  const ctfUsageData = pageViews && ctfEvents ? (() => {
+    const counts: Record<string, number> = {};
+    pageViews.forEach((view: any) => {
+      if (view.ctfEventId) {
+        const ctf = ctfEvents.find(c => c.id === view.ctfEventId);
+        const name = ctf?.name || `CTF ${view.ctfEventId}`;
+        counts[name] = (counts[name] || 0) + 1;
+      }
+    });
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10);
+  })() : [];
+
+  const challengeUsageData = pageViews && challenges ? (() => {
+    const counts: Record<string, number> = {};
+    pageViews.forEach((view: any) => {
+      if (view.challengeId) {
+        const challenge = challenges.find(c => c.id === view.challengeId);
+        const name = challenge?.name || `Challenge ${view.challengeId}`;
+        counts[name] = (counts[name] || 0) + 1;
+      }
+    });
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10);
+  })() : [];
+
+  const endpointUsageData = pageViews ? (() => {
+    const counts: Record<string, number> = {};
+    pageViews.forEach((view: any) => {
+      counts[view.path] = (counts[view.path] || 0) + 1;
+    });
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10);
+  })() : [];
+
+  const CHART_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#6366f1', '#a855f7', '#e11d48', '#f97316'];
+
+  // Pagination helpers
+  const paginatedPageViews = pageViews?.slice((pageViewsPage - 1) * pageSize, pageViewsPage * pageSize) || [];
+  const totalPageViewsPages = Math.ceil((pageViews?.length || 0) / pageSize);
+
+  const paginatedErrorLogs = errorLogs?.slice((errorLogsPage - 1) * pageSize, errorLogsPage * pageSize) || [];
+  const totalErrorLogsPages = Math.ceil((errorLogs?.length || 0) / pageSize);
+
+  return (
+    <div className="space-y-6">
+      {/* Filters */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Filters</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-4">
+            <div className="flex-1 min-w-[200px]">
+              <Label>Time Range</Label>
+              <Select value={timeRange} onValueChange={setTimeRange}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">Last 24 hours</SelectItem>
+                  <SelectItem value="7">Last 7 days</SelectItem>
+                  <SelectItem value="30">Last 30 days</SelectItem>
+                  <SelectItem value="90">Last 90 days</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex-1 min-w-[200px]">
+              <Label>CTF Event</Label>
+              <Select value={ctfEventFilter} onValueChange={setCTFEventFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All CTF Events" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All CTF Events</SelectItem>
+                  {ctfEvents?.map((ctf) => (
+                    <SelectItem key={ctf.id} value={ctf.id.toString()}>
+                      {ctf.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex-1 min-w-[200px]">
+              <Label>Challenge</Label>
+              <Select value={challengeFilter} onValueChange={setChallengeFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All Challenges" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Challenges</SelectItem>
+                  {challenges?.map((challenge) => (
+                    <SelectItem key={challenge.id} value={challenge.id.toString()}>
+                      {challenge.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex-1 min-w-[200px]">
+              <Label>Path Filter</Label>
+              <Input
+                placeholder="e.g., /api/challenges"
+                value={pathFilter}
+                onChange={(e) => setPathFilter(e.target.value)}
+              />
+            </div>
+            <div className="flex-1 min-w-[200px]">
+              <Label>IP Address</Label>
+              <Input
+                placeholder="Filter by IP"
+                value={ipFilter}
+                onChange={(e) => setIpFilter(e.target.value)}
+              />
+            </div>
+            <div className="flex items-end">
+              <label className="flex items-center gap-2 cursor-pointer whitespace-nowrap px-3 py-2 border rounded-md">
+                <input
+                  type="checkbox"
+                  checked={excludeMyIP}
+                  onChange={(e) => setExcludeMyIP(e.target.checked)}
+                  className="w-4 h-4 rounded"
+                />
+                <span className="text-sm">Exclude My IP</span>
+              </label>
+            </div>
+            {(pathFilter || ipFilter || ctfEventFilter || challengeFilter || excludeMyIP) && (
+              <div className="flex items-end">
+                <Button variant="outline" size="sm" onClick={clearFilters}>
+                  Clear All
+                </Button>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Total Page Views</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold">
+              {loadingCount ? <Loader2 className="w-8 h-8 animate-spin" /> : pageViewsCount?.count?.toLocaleString() || 0}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Total Errors</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-destructive">
+              {loadingErrorsCount ? <Loader2 className="w-8 h-8 animate-spin" /> : errorLogsCount?.count?.toLocaleString() || 0}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Charts */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Top CTF Events</CardTitle>
+            <CardDescription>Page views by CTF event</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {ctfUsageData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={ctfUsageData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {ctfUsageData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <RechartsTooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                No CTF data available
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Top Challenges</CardTitle>
+            <CardDescription>Page views by challenge</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {challengeUsageData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={challengeUsageData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {challengeUsageData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <RechartsTooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                No challenge data available
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Top Endpoints</CardTitle>
+            <CardDescription>Most visited paths</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {endpointUsageData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={endpointUsageData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) => {
+                      const shortName = name.length > 20 ? name.slice(0, 20) + '...' : name;
+                      return `${shortName}: ${(percent * 100).toFixed(0)}%`;
+                    }}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {endpointUsageData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <RechartsTooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                No endpoint data available
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Data Tables */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList>
+          <TabsTrigger value="overview">Page Views</TabsTrigger>
+          <TabsTrigger value="errors">Errors</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Page Views ({pageViews?.length || 0})</CardTitle>
+                <PaginationControls
+                  currentPage={pageViewsPage}
+                  totalPages={totalPageViewsPages}
+                  onPageChange={setPageViewsPage}
+                />
+              </div>
+            </CardHeader>
+            <CardContent>
+              {loadingPageViews ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-8 h-8 animate-spin" />
+                </div>
+              ) : (
+                <>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[140px]">Timestamp</TableHead>
+                          <TableHead className="max-w-[300px]">Path</TableHead>
+                          <TableHead className="w-[80px]">Method</TableHead>
+                          <TableHead className="w-[70px]">Status</TableHead>
+                          <TableHead className="w-[120px]">IP Address</TableHead>
+                          <TableHead className="w-[100px]">User ID</TableHead>
+                          <TableHead className="w-[70px]">CTF</TableHead>
+                          <TableHead className="w-[90px]">Challenge</TableHead>
+                          <TableHead className="w-[100px]">Response Time</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {paginatedPageViews.map((view: any, idx: number) => (
+                          <TableRow key={idx}>
+                            <TableCell className="text-xs whitespace-nowrap">{new Date(view.timestamp).toLocaleString()}</TableCell>
+                            <TableCell className="text-xs font-mono max-w-[300px]">
+                              <div className="truncate" title={view.path}>
+                                {view.path}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={view.method === "GET" ? "outline" : "default"} className="text-xs">
+                                {view.method}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={view.statusCode >= 400 ? "destructive" : "default"} className="text-xs">
+                                {view.statusCode}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs font-mono">{view.ipAddress}</TableCell>
+                            <TableCell className="text-xs">{view.userId || "-"}</TableCell>
+                            <TableCell className="text-xs">{view.ctfEventId || "-"}</TableCell>
+                            <TableCell className="text-xs">{view.challengeId || "-"}</TableCell>
+                            <TableCell className="text-xs">{view.responseTime ? `${view.responseTime}ms` : "-"}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                    {pageViews?.length === 0 && (
+                      <div className="text-center py-8 text-muted-foreground">No page views found</div>
+                    )}
+                  </div>
+                  {pageViews && pageViews.length > 0 && (
+                    <div className="flex justify-end mt-4 pt-4 border-t">
+                      <PaginationControls
+                        currentPage={pageViewsPage}
+                        totalPages={totalPageViewsPages}
+                        onPageChange={setPageViewsPage}
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="errors">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Error Logs ({errorLogs?.length || 0})</CardTitle>
+                <PaginationControls
+                  currentPage={errorLogsPage}
+                  totalPages={totalErrorLogsPages}
+                  onPageChange={setErrorLogsPage}
+                />
+              </div>
+            </CardHeader>
+            <CardContent>
+              {loadingErrors ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-8 h-8 animate-spin" />
+                </div>
+              ) : (
+                <>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[140px]">Timestamp</TableHead>
+                          <TableHead className="max-w-[250px]">Path</TableHead>
+                          <TableHead className="w-[80px]">Method</TableHead>
+                          <TableHead className="w-[70px]">Status</TableHead>
+                          <TableHead className="max-w-[200px]">Error Message</TableHead>
+                          <TableHead className="w-[120px]">IP Address</TableHead>
+                          <TableHead className="w-[100px]">User ID</TableHead>
+                          <TableHead className="w-[70px]">CTF</TableHead>
+                          <TableHead className="w-[90px]">Challenge</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {paginatedErrorLogs.map((error: any, idx: number) => (
+                          <TableRow key={idx}>
+                            <TableCell className="text-xs whitespace-nowrap">{new Date(error.timestamp).toLocaleString()}</TableCell>
+                            <TableCell className="text-xs font-mono max-w-[250px]">
+                              <div className="truncate" title={error.path}>
+                                {error.path}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="text-xs">
+                                {error.method}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="destructive" className="text-xs">
+                                {error.statusCode}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs max-w-[200px]">
+                              <div className="truncate" title={error.errorMessage || "-"}>
+                                {error.errorMessage || "-"}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-xs font-mono">{error.ipAddress}</TableCell>
+                            <TableCell className="text-xs">{error.userId || "-"}</TableCell>
+                            <TableCell className="text-xs">{error.ctfEventId || "-"}</TableCell>
+                            <TableCell className="text-xs">{error.challengeId || "-"}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                    {errorLogs?.length === 0 && (
+                      <div className="text-center py-8 text-muted-foreground">No errors found</div>
+                    )}
+                  </div>
+                  {errorLogs && errorLogs.length > 0 && (
+                    <div className="flex justify-end mt-4 pt-4 border-t">
+                      <PaginationControls
+                        currentPage={errorLogsPage}
+                        totalPages={totalErrorLogsPages}
+                        onPageChange={setErrorLogsPage}
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
 // ========== MAIN ADMIN PAGE ==========
 export default function AdminPage() {
+  const [viewMode, setViewMode] = useState<'tabs' | 'challenges' | 'serial-challenges'>('tabs');
+  const [selectedCtfId, setSelectedCtfId] = useState<number | null>(null);
+  const [selectedCtfName, setSelectedCtfName] = useState<string>('');
+
+  const handleViewChallenges = (ctfId: number, ctfName: string, ctfType: string) => {
+    setSelectedCtfId(ctfId);
+    setSelectedCtfName(ctfName);
+    setViewMode(ctfType === 'serial' ? 'serial-challenges' : 'challenges');
+  };
+
+  const handleBackToCtfs = () => {
+    setViewMode('tabs');
+    setSelectedCtfId(null);
+    setSelectedCtfName('');
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground font-sans">
       <Navbar />
@@ -3746,19 +4429,38 @@ export default function AdminPage() {
 
           <Card className="bg-card border-white/5">
             <CardContent className="p-6">
+              {viewMode === 'challenges' && (
+                <div className="mb-6">
+                  <Button variant="ghost" onClick={handleBackToCtfs} className="mb-4">
+                    <ChevronRight className="w-4 h-4 mr-2 rotate-180" />
+                    Back to CTF Events
+                  </Button>
+                  <h2 className="text-2xl font-orbitron font-bold">
+                    Challenges for <span className="text-primary">{selectedCtfName}</span>
+                  </h2>
+                </div>
+              )}
+              {viewMode === 'serial-challenges' && (
+                <div className="mb-6">
+                  <Button variant="ghost" onClick={handleBackToCtfs} className="mb-4">
+                    <ChevronRight className="w-4 h-4 mr-2 rotate-180" />
+                    Back to CTF Events
+                  </Button>
+                  <h2 className="text-2xl font-orbitron font-bold">
+                    Challenges for <span className="text-primary">{selectedCtfName}</span>
+                  </h2>
+                </div>
+              )}
+              {viewMode === 'challenges' ? (
+                <ChallengesTab ctfId={selectedCtfId} />
+              ) : viewMode === 'serial-challenges' ? (
+                <SerialChallengesTab ctfId={selectedCtfId} />
+              ) : (
               <Tabs defaultValue="ctfs">
                 <TabsList className="mb-6">
                   <TabsTrigger value="ctfs">
                     <Trophy className="w-4 h-4 mr-2" />
                     CTF Events
-                  </TabsTrigger>
-                  <TabsTrigger value="challenges">
-                    <Flag className="w-4 h-4 mr-2" />
-                    Challenges
-                  </TabsTrigger>
-                  <TabsTrigger value="serial">
-                    <List className="w-4 h-4 mr-2" />
-                    Serial Challenges
                   </TabsTrigger>
                   <TabsTrigger value="containers">
                     <Container className="w-4 h-4 mr-2" />
@@ -3776,6 +4478,10 @@ export default function AdminPage() {
                     <Palette className="w-4 h-4 mr-2" />
                     Categories
                   </TabsTrigger>
+                  <TabsTrigger value="analytics">
+                    <Activity className="w-4 h-4 mr-2" />
+                    Analytics
+                  </TabsTrigger>
                   <TabsTrigger value="settings">
                     <Settings className="w-4 h-4 mr-2" />
                     Settings
@@ -3783,13 +4489,7 @@ export default function AdminPage() {
                 </TabsList>
 
                 <TabsContent value="ctfs">
-                  <CtfEventsTab />
-                </TabsContent>
-                <TabsContent value="challenges">
-                  <ChallengesTab />
-                </TabsContent>
-                <TabsContent value="serial">
-                  <SerialChallengesTab />
+                  <CtfEventsTab onViewChallenges={handleViewChallenges} />
                 </TabsContent>
                 <TabsContent value="containers">
                   <ContainersTab />
@@ -3803,10 +4503,14 @@ export default function AdminPage() {
                 <TabsContent value="categories">
                   <CategoriesTab />
                 </TabsContent>
+                <TabsContent value="analytics">
+                  <AnalyticsTab />
+                </TabsContent>
                 <TabsContent value="settings">
                   <SettingsTab />
                 </TabsContent>
               </Tabs>
+              )}
             </CardContent>
           </Card>
         </div>

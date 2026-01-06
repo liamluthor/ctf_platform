@@ -172,6 +172,98 @@ app.use((req, res, next) => {
   next();
 });
 
+// Analytics tracking middleware
+app.use((req, res, next) => {
+  const start = Date.now();
+  let capturedJsonResponse: Record<string, any> | undefined = undefined;
+
+  const originalResJson = res.json;
+  res.json = function (bodyJson, ...args) {
+    capturedJsonResponse = bodyJson;
+    return originalResJson.apply(res, [bodyJson, ...args]);
+  };
+
+  res.on("finish", async () => {
+    const duration = Date.now() - start;
+    const statusCode = res.statusCode;
+    const path = req.path;
+    const ipAddress = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || 'unknown';
+    const userAgent = req.headers['user-agent'] || null;
+    const refererHeader = req.headers['referer'] || req.headers['referrer'] || null;
+    const referer = Array.isArray(refererHeader) ? refererHeader[0] : refererHeader;
+
+    // Track all non-static requests (exclude assets, static files, and Vite dev paths)
+    const isStaticFile = path.startsWith("/assets/") ||
+                         path.match(/\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf)$/) ||
+                         path.startsWith("/@") ||
+                         path.includes("/.vite") ||
+                         path.includes("/node_modules");
+
+    if (!isStaticFile) {
+      try {
+        // Extract CTF/Challenge context from path or session
+        let ctfEventId: number | null = null;
+        let challengeId: number | null = null;
+        let userId: string | null = null;
+
+        // Get user ID from session if available
+        if (req.session?.userId) {
+          userId = req.session.userId;
+        }
+
+        // Extract IDs from URL path patterns
+        // Example paths: /ctf/123, /challenge/456, /api/ctf-events/123, etc.
+        const ctfMatch = path.match(/\/(?:ctf|ctf-events?)\/(\d+)/i);
+        const challengeMatch = path.match(/\/challenges?\/(\d+)/i);
+
+        if (ctfMatch) {
+          ctfEventId = parseInt(ctfMatch[1], 10);
+        }
+        if (challengeMatch) {
+          challengeId = parseInt(challengeMatch[1], 10);
+        }
+
+        // Log errors (4xx and 5xx status codes)
+        if (statusCode >= 400) {
+          const { logError } = await import("./storage");
+          await logError({
+            userId,
+            ctfEventId,
+            challengeId,
+            ipAddress,
+            path,
+            method: req.method,
+            statusCode,
+            errorMessage: capturedJsonResponse?.message || capturedJsonResponse?.error || null,
+            userAgent,
+            referer,
+          });
+        } else {
+          // Log successful page views
+          const { logPageView } = await import("./storage");
+          await logPageView({
+            userId,
+            ctfEventId,
+            challengeId,
+            ipAddress,
+            path,
+            method: req.method,
+            statusCode,
+            userAgent,
+            referer,
+            responseTime: duration,
+          });
+        }
+      } catch (error) {
+        // Don't let analytics errors crash the app
+        logger.error({ error }, '[analytics] Error logging request');
+      }
+    }
+  });
+
+  next();
+});
+
 (async () => {
   await registerRoutes(httpServer, app);
   await bootstrapAdmin();

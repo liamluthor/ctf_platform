@@ -2749,4 +2749,218 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
+  // ========== ANALYTICS ENDPOINTS ==========
+
+  // Get page views with optional filters
+  app.get("/api/admin/analytics/page-views", requireAdmin, async (req, res) => {
+    try {
+      const {
+        startDate,
+        endDate,
+        path,
+        ipAddress,
+        userId,
+        ctfEventId,
+        challengeId,
+        excludeMyIP,
+      } = req.query;
+
+      const filters: any = {};
+
+      if (startDate) {
+        filters.startDate = new Date(startDate as string);
+      }
+      if (endDate) {
+        filters.endDate = new Date(endDate as string);
+      }
+      if (path) {
+        filters.path = path as string;
+      }
+      if (userId) {
+        filters.userId = userId as string;
+      }
+      if (ctfEventId) {
+        filters.ctfEventId = parseInt(ctfEventId as string, 10);
+      }
+      if (challengeId) {
+        filters.challengeId = parseInt(challengeId as string, 10);
+      }
+
+      // Handle IP address filtering with exclusion support
+      if (excludeMyIP === 'true' && !ipAddress) {
+        const currentIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip;
+        filters.ipAddress = `!${currentIp}`; // Prefix with ! to indicate exclusion
+      } else if (ipAddress) {
+        filters.ipAddress = ipAddress as string;
+      }
+
+      const views = await storage.getPageViews(filters);
+      res.json(views);
+    } catch (error) {
+      logger.error({ error }, "Failed to get page views");
+      res.status(500).json({ error: "Failed to get page views" });
+    }
+  });
+
+  // Get page views count
+  app.get("/api/admin/analytics/page-views/count", requireAdmin, async (req, res) => {
+    try {
+      const {
+        startDate,
+        endDate,
+        path,
+        ipAddress,
+        userId,
+        ctfEventId,
+        challengeId,
+        excludeMyIP,
+      } = req.query;
+
+      const filters: any = {};
+
+      if (startDate) {
+        filters.startDate = new Date(startDate as string);
+      }
+      if (endDate) {
+        filters.endDate = new Date(endDate as string);
+      }
+      if (path) {
+        filters.path = path as string;
+      }
+      if (userId) {
+        filters.userId = userId as string;
+      }
+      if (ctfEventId) {
+        filters.ctfEventId = parseInt(ctfEventId as string, 10);
+      }
+      if (challengeId) {
+        filters.challengeId = parseInt(challengeId as string, 10);
+      }
+
+      // Handle IP address filtering with exclusion support
+      if (excludeMyIP === 'true' && !ipAddress) {
+        const currentIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip;
+        filters.ipAddress = `!${currentIp}`; // Prefix with ! to indicate exclusion
+      } else if (ipAddress) {
+        filters.ipAddress = ipAddress as string;
+      }
+
+      const count = await storage.getPageViewsCount(filters);
+      res.json({ count });
+    } catch (error) {
+      logger.error({ error }, "Failed to get page views count");
+      res.status(500).json({ error: "Failed to get page views count" });
+    }
+  });
+
+  // Get error logs with optional filters
+  app.get("/api/admin/analytics/error-logs", requireAdmin, async (req, res) => {
+    try {
+      const {
+        startDate,
+        endDate,
+        path,
+        ipAddress,
+        userId,
+        ctfEventId,
+        challengeId,
+        statusCode,
+        excludeMyIP,
+      } = req.query;
+
+      const filters: any = {};
+
+      if (startDate) {
+        filters.startDate = new Date(startDate as string);
+      }
+      if (endDate) {
+        filters.endDate = new Date(endDate as string);
+      }
+      if (path) {
+        filters.path = path as string;
+      }
+      if (userId) {
+        filters.userId = userId as string;
+      }
+      if (ctfEventId) {
+        filters.ctfEventId = parseInt(ctfEventId as string, 10);
+      }
+      if (challengeId) {
+        filters.challengeId = parseInt(challengeId as string, 10);
+      }
+      if (statusCode) {
+        filters.statusCode = parseInt(statusCode as string, 10);
+      }
+
+      // Handle IP address filtering with exclusion support
+      if (excludeMyIP === 'true' && !ipAddress) {
+        const currentIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip;
+        filters.ipAddress = `!${currentIp}`; // Prefix with ! to indicate exclusion
+      } else if (ipAddress) {
+        filters.ipAddress = ipAddress as string;
+      }
+
+      const errors = await storage.getErrorLogs(filters);
+      res.json(errors);
+    } catch (error) {
+      logger.error({ error }, "Failed to get error logs");
+      res.status(500).json({ error: "Failed to get error logs" });
+    }
+  });
+
+  // Get error logs count
+  app.get("/api/admin/analytics/error-logs/count", requireAdmin, async (req, res) => {
+    try {
+      const {
+        startDate,
+        endDate,
+        path,
+        ipAddress,
+        userId,
+        ctfEventId,
+        challengeId,
+        statusCode,
+        excludeMyIP,
+      } = req.query;
+
+      const filters: any = {};
+
+      if (startDate) {
+        filters.startDate = new Date(startDate as string);
+      }
+      if (endDate) {
+        filters.endDate = new Date(endDate as string);
+      }
+      if (path) {
+        filters.path = path as string;
+      }
+      if (userId) {
+        filters.userId = userId as string;
+      }
+      if (ctfEventId) {
+        filters.ctfEventId = parseInt(ctfEventId as string, 10);
+      }
+      if (challengeId) {
+        filters.challengeId = parseInt(challengeId as string, 10);
+      }
+      if (statusCode) {
+        filters.statusCode = parseInt(statusCode as string, 10);
+      }
+
+      // Handle IP address filtering with exclusion support
+      if (excludeMyIP === 'true' && !ipAddress) {
+        const currentIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip;
+        filters.ipAddress = `!${currentIp}`; // Prefix with ! to indicate exclusion
+      } else if (ipAddress) {
+        filters.ipAddress = ipAddress as string;
+      }
+
+      const count = await storage.getErrorLogsCount(filters);
+      res.json({ count });
+    } catch (error) {
+      logger.error({ error }, "Failed to get error logs count");
+      res.status(500).json({ error: "Failed to get error logs count" });
+    }
+  });
+
 }
