@@ -7,6 +7,7 @@
  *   tsx script/import-analytics-from-logs.ts --stdin [--dry-run] [--skip-duplicate-check]
  */
 
+import "dotenv/config";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { pageViews, errorLogs } from "../shared/schema";
 import { and, eq, sql } from "drizzle-orm";
@@ -20,7 +21,7 @@ const { Pool } = pg;
 
 // Database connection
 if (!process.env.DATABASE_URL) {
-  throw new Error("DATABASE_URL environment variable is not set");
+  throw new Error("DATABASE_URL environment variable is not set. Make sure .env file exists in the project root.");
 }
 
 const pool = new Pool({
