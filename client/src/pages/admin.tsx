@@ -3761,6 +3761,59 @@ function ContainersTab() {
   );
 }
 
+// ========== PAGINATION COMPONENT ==========
+function PaginationControls({
+  currentPage,
+  totalPages,
+  onPageChange
+}: {
+  currentPage: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-sm text-muted-foreground">
+        Page {currentPage} of {totalPages}
+      </span>
+      <div className="flex gap-1">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(1)}
+          disabled={currentPage === 1}
+        >
+          <ChevronsLeft className="w-4 h-4" />
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+          disabled={currentPage === 1}
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
+          disabled={currentPage === totalPages}
+        >
+          <ChevronRight className="w-4 h-4" />
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(totalPages)}
+          disabled={currentPage === totalPages}
+        >
+          <ChevronsRight className="w-4 h-4" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // ========== ANALYTICS TAB ==========
 function AnalyticsTab() {
   const { toast } = useToast();
@@ -4181,45 +4234,11 @@ function AnalyticsTab() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Page Views ({pageViews?.length || 0})</CardTitle>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">
-                    Page {pageViewsPage} of {totalPageViewsPages}
-                  </span>
-                  <div className="flex gap-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPageViewsPage(1)}
-                      disabled={pageViewsPage === 1}
-                    >
-                      <ChevronsLeft className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPageViewsPage(p => Math.max(1, p - 1))}
-                      disabled={pageViewsPage === 1}
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPageViewsPage(p => Math.min(totalPageViewsPages, p + 1))}
-                      disabled={pageViewsPage === totalPageViewsPages}
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPageViewsPage(totalPageViewsPages)}
-                      disabled={pageViewsPage === totalPageViewsPages}
-                    >
-                      <ChevronsRight className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
+                <PaginationControls
+                  currentPage={pageViewsPage}
+                  totalPages={totalPageViewsPages}
+                  onPageChange={setPageViewsPage}
+                />
               </div>
             </CardHeader>
             <CardContent>
@@ -4228,53 +4247,64 @@ function AnalyticsTab() {
                   <Loader2 className="w-8 h-8 animate-spin" />
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-[140px]">Timestamp</TableHead>
-                        <TableHead className="max-w-[300px]">Path</TableHead>
-                        <TableHead className="w-[80px]">Method</TableHead>
-                        <TableHead className="w-[70px]">Status</TableHead>
-                        <TableHead className="w-[120px]">IP Address</TableHead>
-                        <TableHead className="w-[100px]">User ID</TableHead>
-                        <TableHead className="w-[70px]">CTF</TableHead>
-                        <TableHead className="w-[90px]">Challenge</TableHead>
-                        <TableHead className="w-[100px]">Response Time</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {paginatedPageViews.map((view: any, idx: number) => (
-                        <TableRow key={idx}>
-                          <TableCell className="text-xs whitespace-nowrap">{new Date(view.timestamp).toLocaleString()}</TableCell>
-                          <TableCell className="text-xs font-mono max-w-[300px]">
-                            <div className="truncate" title={view.path}>
-                              {view.path}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={view.method === "GET" ? "outline" : "default"} className="text-xs">
-                              {view.method}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={view.statusCode >= 400 ? "destructive" : "default"} className="text-xs">
-                              {view.statusCode}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-xs font-mono">{view.ipAddress}</TableCell>
-                          <TableCell className="text-xs">{view.userId || "-"}</TableCell>
-                          <TableCell className="text-xs">{view.ctfEventId || "-"}</TableCell>
-                          <TableCell className="text-xs">{view.challengeId || "-"}</TableCell>
-                          <TableCell className="text-xs">{view.responseTime ? `${view.responseTime}ms` : "-"}</TableCell>
+                <>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[140px]">Timestamp</TableHead>
+                          <TableHead className="max-w-[300px]">Path</TableHead>
+                          <TableHead className="w-[80px]">Method</TableHead>
+                          <TableHead className="w-[70px]">Status</TableHead>
+                          <TableHead className="w-[120px]">IP Address</TableHead>
+                          <TableHead className="w-[100px]">User ID</TableHead>
+                          <TableHead className="w-[70px]">CTF</TableHead>
+                          <TableHead className="w-[90px]">Challenge</TableHead>
+                          <TableHead className="w-[100px]">Response Time</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                  {pageViews?.length === 0 && (
-                    <div className="text-center py-8 text-muted-foreground">No page views found</div>
+                      </TableHeader>
+                      <TableBody>
+                        {paginatedPageViews.map((view: any, idx: number) => (
+                          <TableRow key={idx}>
+                            <TableCell className="text-xs whitespace-nowrap">{new Date(view.timestamp).toLocaleString()}</TableCell>
+                            <TableCell className="text-xs font-mono max-w-[300px]">
+                              <div className="truncate" title={view.path}>
+                                {view.path}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={view.method === "GET" ? "outline" : "default"} className="text-xs">
+                                {view.method}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={view.statusCode >= 400 ? "destructive" : "default"} className="text-xs">
+                                {view.statusCode}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs font-mono">{view.ipAddress}</TableCell>
+                            <TableCell className="text-xs">{view.userId || "-"}</TableCell>
+                            <TableCell className="text-xs">{view.ctfEventId || "-"}</TableCell>
+                            <TableCell className="text-xs">{view.challengeId || "-"}</TableCell>
+                            <TableCell className="text-xs">{view.responseTime ? `${view.responseTime}ms` : "-"}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                    {pageViews?.length === 0 && (
+                      <div className="text-center py-8 text-muted-foreground">No page views found</div>
+                    )}
+                  </div>
+                  {pageViews && pageViews.length > 0 && (
+                    <div className="flex justify-end mt-4 pt-4 border-t">
+                      <PaginationControls
+                        currentPage={pageViewsPage}
+                        totalPages={totalPageViewsPages}
+                        onPageChange={setPageViewsPage}
+                      />
+                    </div>
                   )}
-                </div>
+                </>
               )}
             </CardContent>
           </Card>
@@ -4285,45 +4315,11 @@ function AnalyticsTab() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Error Logs ({errorLogs?.length || 0})</CardTitle>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">
-                    Page {errorLogsPage} of {totalErrorLogsPages}
-                  </span>
-                  <div className="flex gap-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setErrorLogsPage(1)}
-                      disabled={errorLogsPage === 1}
-                    >
-                      <ChevronsLeft className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setErrorLogsPage(p => Math.max(1, p - 1))}
-                      disabled={errorLogsPage === 1}
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setErrorLogsPage(p => Math.min(totalErrorLogsPages, p + 1))}
-                      disabled={errorLogsPage === totalErrorLogsPages}
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setErrorLogsPage(totalErrorLogsPages)}
-                      disabled={errorLogsPage === totalErrorLogsPages}
-                    >
-                      <ChevronsRight className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
+                <PaginationControls
+                  currentPage={errorLogsPage}
+                  totalPages={totalErrorLogsPages}
+                  onPageChange={setErrorLogsPage}
+                />
               </div>
             </CardHeader>
             <CardContent>
@@ -4332,57 +4328,68 @@ function AnalyticsTab() {
                   <Loader2 className="w-8 h-8 animate-spin" />
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-[140px]">Timestamp</TableHead>
-                        <TableHead className="max-w-[250px]">Path</TableHead>
-                        <TableHead className="w-[80px]">Method</TableHead>
-                        <TableHead className="w-[70px]">Status</TableHead>
-                        <TableHead className="max-w-[200px]">Error Message</TableHead>
-                        <TableHead className="w-[120px]">IP Address</TableHead>
-                        <TableHead className="w-[100px]">User ID</TableHead>
-                        <TableHead className="w-[70px]">CTF</TableHead>
-                        <TableHead className="w-[90px]">Challenge</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {paginatedErrorLogs.map((error: any, idx: number) => (
-                        <TableRow key={idx}>
-                          <TableCell className="text-xs whitespace-nowrap">{new Date(error.timestamp).toLocaleString()}</TableCell>
-                          <TableCell className="text-xs font-mono max-w-[250px]">
-                            <div className="truncate" title={error.path}>
-                              {error.path}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="text-xs">
-                              {error.method}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="destructive" className="text-xs">
-                              {error.statusCode}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-xs max-w-[200px]">
-                            <div className="truncate" title={error.errorMessage || "-"}>
-                              {error.errorMessage || "-"}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-xs font-mono">{error.ipAddress}</TableCell>
-                          <TableCell className="text-xs">{error.userId || "-"}</TableCell>
-                          <TableCell className="text-xs">{error.ctfEventId || "-"}</TableCell>
-                          <TableCell className="text-xs">{error.challengeId || "-"}</TableCell>
+                <>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[140px]">Timestamp</TableHead>
+                          <TableHead className="max-w-[250px]">Path</TableHead>
+                          <TableHead className="w-[80px]">Method</TableHead>
+                          <TableHead className="w-[70px]">Status</TableHead>
+                          <TableHead className="max-w-[200px]">Error Message</TableHead>
+                          <TableHead className="w-[120px]">IP Address</TableHead>
+                          <TableHead className="w-[100px]">User ID</TableHead>
+                          <TableHead className="w-[70px]">CTF</TableHead>
+                          <TableHead className="w-[90px]">Challenge</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                  {errorLogs?.length === 0 && (
-                    <div className="text-center py-8 text-muted-foreground">No errors found</div>
+                      </TableHeader>
+                      <TableBody>
+                        {paginatedErrorLogs.map((error: any, idx: number) => (
+                          <TableRow key={idx}>
+                            <TableCell className="text-xs whitespace-nowrap">{new Date(error.timestamp).toLocaleString()}</TableCell>
+                            <TableCell className="text-xs font-mono max-w-[250px]">
+                              <div className="truncate" title={error.path}>
+                                {error.path}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="text-xs">
+                                {error.method}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="destructive" className="text-xs">
+                                {error.statusCode}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-xs max-w-[200px]">
+                              <div className="truncate" title={error.errorMessage || "-"}>
+                                {error.errorMessage || "-"}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-xs font-mono">{error.ipAddress}</TableCell>
+                            <TableCell className="text-xs">{error.userId || "-"}</TableCell>
+                            <TableCell className="text-xs">{error.ctfEventId || "-"}</TableCell>
+                            <TableCell className="text-xs">{error.challengeId || "-"}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                    {errorLogs?.length === 0 && (
+                      <div className="text-center py-8 text-muted-foreground">No errors found</div>
+                    )}
+                  </div>
+                  {errorLogs && errorLogs.length > 0 && (
+                    <div className="flex justify-end mt-4 pt-4 border-t">
+                      <PaginationControls
+                        currentPage={errorLogsPage}
+                        totalPages={totalErrorLogsPages}
+                        onPageChange={setErrorLogsPage}
+                      />
+                    </div>
                   )}
-                </div>
+                </>
               )}
             </CardContent>
           </Card>
