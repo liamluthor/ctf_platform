@@ -78,9 +78,13 @@ import {
   List,
   Eye,
   EyeOff,
+  ChevronLeft,
+  ChevronsLeft,
+  ChevronsRight,
 } from "lucide-react";
 import { format } from "date-fns";
 import type { CtfEvent, Category, Challenge } from "@shared/schema";
+import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip as RechartsTooltip } from 'recharts';
 
 // ========== CTF EVENTS TAB ==========
 function CtfEventsTab({ onViewChallenges }: { onViewChallenges: (ctfId: number, ctfName: string, ctfType: string) => void }) {
@@ -1059,9 +1063,9 @@ function ChallengesTab({ ctfId }: { ctfId?: number | null }) {
                   challenges: [],
                 };
               }
-              acc[key].challenges.push(challenge);
+              acc[key]!.challenges.push(challenge);
               return acc;
-            }, {} as Record<number, { ctfName: string; challenges: typeof challenges }>);
+            }, {} as Record<number, { ctfName: string; challenges: any[] }>);
 
             if (!grouped) return null;
 
@@ -1128,7 +1132,7 @@ function ChallengesTab({ ctfId }: { ctfId?: number | null }) {
                       </TableHeader>
                       <TableBody>
                         {(() => {
-                          let sorted = [...ctfChallenges];
+                          let sorted = [...(ctfChallenges || [])];
                           if (sortConfig) {
                             sorted.sort((a, b) => {
                               const aVal = a[sortConfig.key] ?? '';
@@ -3096,7 +3100,7 @@ function ContainersTab() {
     e.preventDefault();
 
     // Validate that all ports are valid numbers
-    if (portMappings.some(pm => !pm.containerPort || pm.containerPort === "")) {
+    if (portMappings.some(pm => !pm.containerPort || String(pm.containerPort) === "")) {
       return; // HTML5 required attribute should prevent this, but double-check
     }
 
@@ -3767,6 +3771,9 @@ function AnalyticsTab() {
   const [ctfEventFilter, setCTFEventFilter] = useState<string>("all");
   const [challengeFilter, setChallengeFilter] = useState<string>("all");
   const [activeTab, setActiveTab] = useState("overview");
+  const [pageViewsPage, setPageViewsPage] = useState(1);
+  const [errorLogsPage, setErrorLogsPage] = useState(1);
+  const pageSize = 50;
 
   // Fetch page views
   const { data: pageViews, isLoading: loadingPageViews } = useQuery({
@@ -3886,6 +3893,57 @@ function AnalyticsTab() {
     setExcludeMyIP(false);
   };
 
+  // Prepare chart data
+  const ctfUsageData = pageViews && ctfEvents ? (() => {
+    const counts: Record<string, number> = {};
+    pageViews.forEach((view: any) => {
+      if (view.ctfEventId) {
+        const ctf = ctfEvents.find(c => c.id === view.ctfEventId);
+        const name = ctf?.name || `CTF ${view.ctfEventId}`;
+        counts[name] = (counts[name] || 0) + 1;
+      }
+    });
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10);
+  })() : [];
+
+  const challengeUsageData = pageViews && challenges ? (() => {
+    const counts: Record<string, number> = {};
+    pageViews.forEach((view: any) => {
+      if (view.challengeId) {
+        const challenge = challenges.find(c => c.id === view.challengeId);
+        const name = challenge?.name || `Challenge ${view.challengeId}`;
+        counts[name] = (counts[name] || 0) + 1;
+      }
+    });
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10);
+  })() : [];
+
+  const endpointUsageData = pageViews ? (() => {
+    const counts: Record<string, number> = {};
+    pageViews.forEach((view: any) => {
+      counts[view.path] = (counts[view.path] || 0) + 1;
+    });
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10);
+  })() : [];
+
+  const CHART_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#6366f1', '#a855f7', '#e11d48', '#f97316'];
+
+  // Pagination helpers
+  const paginatedPageViews = pageViews?.slice((pageViewsPage - 1) * pageSize, pageViewsPage * pageSize) || [];
+  const totalPageViewsPages = Math.ceil((pageViews?.length || 0) / pageSize);
+
+  const paginatedErrorLogs = errorLogs?.slice((errorLogsPage - 1) * pageSize, errorLogsPage * pageSize) || [];
+  const totalErrorLogsPages = Math.ceil((errorLogs?.length || 0) / pageSize);
+
   return (
     <div className="space-y-6">
       {/* Filters */}
@@ -4003,6 +4061,114 @@ function AnalyticsTab() {
         </Card>
       </div>
 
+      {/* Charts */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Top CTF Events</CardTitle>
+            <CardDescription>Page views by CTF event</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {ctfUsageData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={ctfUsageData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {ctfUsageData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <RechartsTooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                No CTF data available
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Top Challenges</CardTitle>
+            <CardDescription>Page views by challenge</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {challengeUsageData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={challengeUsageData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {challengeUsageData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <RechartsTooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                No challenge data available
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Top Endpoints</CardTitle>
+            <CardDescription>Most visited paths</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {endpointUsageData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={endpointUsageData}
+                    cx="50%"
+                    cy="50%"
+                    labelLine={false}
+                    label={({ name, percent }) => {
+                      const shortName = name.length > 20 ? name.slice(0, 20) + '...' : name;
+                      return `${shortName}: ${(percent * 100).toFixed(0)}%`;
+                    }}
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="value"
+                  >
+                    {endpointUsageData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <RechartsTooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                No endpoint data available
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Data Tables */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
@@ -4013,7 +4179,48 @@ function AnalyticsTab() {
         <TabsContent value="overview">
           <Card>
             <CardHeader>
-              <CardTitle>Page Views ({pageViews?.length || 0})</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle>Page Views ({pageViews?.length || 0})</CardTitle>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">
+                    Page {pageViewsPage} of {totalPageViewsPages}
+                  </span>
+                  <div className="flex gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPageViewsPage(1)}
+                      disabled={pageViewsPage === 1}
+                    >
+                      <ChevronsLeft className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPageViewsPage(p => Math.max(1, p - 1))}
+                      disabled={pageViewsPage === 1}
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPageViewsPage(p => Math.min(totalPageViewsPages, p + 1))}
+                      disabled={pageViewsPage === totalPageViewsPages}
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPageViewsPage(totalPageViewsPages)}
+                      disabled={pageViewsPage === totalPageViewsPages}
+                    >
+                      <ChevronsRight className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               {loadingPageViews ? (
@@ -4025,22 +4232,26 @@ function AnalyticsTab() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Timestamp</TableHead>
-                        <TableHead>Path</TableHead>
-                        <TableHead>Method</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>IP Address</TableHead>
-                        <TableHead>User ID</TableHead>
-                        <TableHead>CTF</TableHead>
-                        <TableHead>Challenge</TableHead>
-                        <TableHead>Response Time</TableHead>
+                        <TableHead className="w-[140px]">Timestamp</TableHead>
+                        <TableHead className="max-w-[300px]">Path</TableHead>
+                        <TableHead className="w-[80px]">Method</TableHead>
+                        <TableHead className="w-[70px]">Status</TableHead>
+                        <TableHead className="w-[120px]">IP Address</TableHead>
+                        <TableHead className="w-[100px]">User ID</TableHead>
+                        <TableHead className="w-[70px]">CTF</TableHead>
+                        <TableHead className="w-[90px]">Challenge</TableHead>
+                        <TableHead className="w-[100px]">Response Time</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {pageViews?.slice(0, 100).map((view: any, idx: number) => (
+                      {paginatedPageViews.map((view: any, idx: number) => (
                         <TableRow key={idx}>
-                          <TableCell className="text-xs">{new Date(view.timestamp).toLocaleString()}</TableCell>
-                          <TableCell className="text-xs font-mono">{view.path}</TableCell>
+                          <TableCell className="text-xs whitespace-nowrap">{new Date(view.timestamp).toLocaleString()}</TableCell>
+                          <TableCell className="text-xs font-mono max-w-[300px]">
+                            <div className="truncate" title={view.path}>
+                              {view.path}
+                            </div>
+                          </TableCell>
                           <TableCell>
                             <Badge variant={view.method === "GET" ? "outline" : "default"} className="text-xs">
                               {view.method}
@@ -4063,11 +4274,6 @@ function AnalyticsTab() {
                   {pageViews?.length === 0 && (
                     <div className="text-center py-8 text-muted-foreground">No page views found</div>
                   )}
-                  {pageViews?.length > 100 && (
-                    <div className="text-center py-4 text-sm text-muted-foreground">
-                      Showing first 100 of {pageViews.length} results
-                    </div>
-                  )}
                 </div>
               )}
             </CardContent>
@@ -4077,7 +4283,48 @@ function AnalyticsTab() {
         <TabsContent value="errors">
           <Card>
             <CardHeader>
-              <CardTitle>Error Logs ({errorLogs?.length || 0})</CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle>Error Logs ({errorLogs?.length || 0})</CardTitle>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">
+                    Page {errorLogsPage} of {totalErrorLogsPages}
+                  </span>
+                  <div className="flex gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setErrorLogsPage(1)}
+                      disabled={errorLogsPage === 1}
+                    >
+                      <ChevronsLeft className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setErrorLogsPage(p => Math.max(1, p - 1))}
+                      disabled={errorLogsPage === 1}
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setErrorLogsPage(p => Math.min(totalErrorLogsPages, p + 1))}
+                      disabled={errorLogsPage === totalErrorLogsPages}
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setErrorLogsPage(totalErrorLogsPages)}
+                      disabled={errorLogsPage === totalErrorLogsPages}
+                    >
+                      <ChevronsRight className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               {loadingErrors ? (
@@ -4089,22 +4336,26 @@ function AnalyticsTab() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Timestamp</TableHead>
-                        <TableHead>Path</TableHead>
-                        <TableHead>Method</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Error Message</TableHead>
-                        <TableHead>IP Address</TableHead>
-                        <TableHead>User ID</TableHead>
-                        <TableHead>CTF</TableHead>
-                        <TableHead>Challenge</TableHead>
+                        <TableHead className="w-[140px]">Timestamp</TableHead>
+                        <TableHead className="max-w-[250px]">Path</TableHead>
+                        <TableHead className="w-[80px]">Method</TableHead>
+                        <TableHead className="w-[70px]">Status</TableHead>
+                        <TableHead className="max-w-[200px]">Error Message</TableHead>
+                        <TableHead className="w-[120px]">IP Address</TableHead>
+                        <TableHead className="w-[100px]">User ID</TableHead>
+                        <TableHead className="w-[70px]">CTF</TableHead>
+                        <TableHead className="w-[90px]">Challenge</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {errorLogs?.slice(0, 100).map((error: any, idx: number) => (
+                      {paginatedErrorLogs.map((error: any, idx: number) => (
                         <TableRow key={idx}>
-                          <TableCell className="text-xs">{new Date(error.timestamp).toLocaleString()}</TableCell>
-                          <TableCell className="text-xs font-mono">{error.path}</TableCell>
+                          <TableCell className="text-xs whitespace-nowrap">{new Date(error.timestamp).toLocaleString()}</TableCell>
+                          <TableCell className="text-xs font-mono max-w-[250px]">
+                            <div className="truncate" title={error.path}>
+                              {error.path}
+                            </div>
+                          </TableCell>
                           <TableCell>
                             <Badge variant="outline" className="text-xs">
                               {error.method}
@@ -4115,7 +4366,11 @@ function AnalyticsTab() {
                               {error.statusCode}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-xs max-w-xs truncate">{error.errorMessage || "-"}</TableCell>
+                          <TableCell className="text-xs max-w-[200px]">
+                            <div className="truncate" title={error.errorMessage || "-"}>
+                              {error.errorMessage || "-"}
+                            </div>
+                          </TableCell>
                           <TableCell className="text-xs font-mono">{error.ipAddress}</TableCell>
                           <TableCell className="text-xs">{error.userId || "-"}</TableCell>
                           <TableCell className="text-xs">{error.ctfEventId || "-"}</TableCell>
@@ -4126,11 +4381,6 @@ function AnalyticsTab() {
                   </Table>
                   {errorLogs?.length === 0 && (
                     <div className="text-center py-8 text-muted-foreground">No errors found</div>
-                  )}
-                  {errorLogs?.length > 100 && (
-                    <div className="text-center py-4 text-sm text-muted-foreground">
-                      Showing first 100 of {errorLogs.length} results
-                    </div>
                   )}
                 </div>
               )}
