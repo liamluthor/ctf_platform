@@ -83,7 +83,7 @@ import { format } from "date-fns";
 import type { CtfEvent, Category, Challenge } from "@shared/schema";
 
 // ========== CTF EVENTS TAB ==========
-function CtfEventsTab() {
+function CtfEventsTab({ onViewChallenges }: { onViewChallenges: (ctfId: number, ctfName: string, ctfType: string) => void }) {
   const { toast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingCtf, setEditingCtf] = useState<CtfEvent | null>(null);
@@ -363,6 +363,7 @@ function CtfEventsTab() {
               <TableHead>Dates</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Status</TableHead>
+              <TableHead>Challenges</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -384,6 +385,16 @@ function CtfEventsTab() {
                   <Badge variant={ctf.isPublished ? "default" : "secondary"}>
                     {ctf.isPublished ? "Published" : "Draft"}
                   </Badge>
+                </TableCell>
+                <TableCell>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onViewChallenges(ctf.id, ctf.name, ctf.ctfType || 'jeopardy')}
+                  >
+                    <Flag className="w-4 h-4 mr-2" />
+                    Challenges
+                  </Button>
                 </TableCell>
                 <TableCell className="text-right">
                   <Button variant="ghost" size="sm" onClick={() => openEditDialog(ctf)}>
@@ -438,7 +449,7 @@ function formatFileSize(bytes: number): string {
 }
 
 // ========== CHALLENGES TAB ==========
-function ChallengesTab() {
+function ChallengesTab({ ctfId }: { ctfId?: number | null }) {
   const { toast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [filesDialogOpen, setFilesDialogOpen] = useState(false);
@@ -453,6 +464,13 @@ function ChallengesTab() {
     key: 'name' | 'categoryName' | 'points';
     direction: 'asc' | 'desc';
   } | null>(null);
+
+  // Auto-expand the CTF when viewing a filtered view
+  useEffect(() => {
+    if (ctfId) {
+      setExpandedCtfs(new Set([ctfId]));
+    }
+  }, [ctfId]);
 
   const toggleCtfExpanded = (ctfId: number) => {
     setExpandedCtfs(prev => {
@@ -1027,8 +1045,13 @@ function ChallengesTab() {
         <div className="space-y-2">
           {/* Group challenges by CTF */}
           {(() => {
+            // Filter challenges by ctfId if provided
+            const filteredChallenges = ctfId
+              ? challenges?.filter(c => c.ctfEventId === ctfId)
+              : challenges;
+
             // Group challenges by ctfEventId
-            const grouped = challenges?.reduce((acc, challenge) => {
+            const grouped = filteredChallenges?.reduce((acc, challenge) => {
               const key = challenge.ctfEventId;
               if (!acc[key]) {
                 acc[key] = {
@@ -2024,7 +2047,7 @@ function SettingsTab() {
 }
 
 // ========== SERIAL CHALLENGES TAB ==========
-function SerialChallengesTab() {
+function SerialChallengesTab({ ctfId }: { ctfId?: number | null }) {
   const { toast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [stagesDialogOpen, setStagesDialogOpen] = useState(false);
@@ -2381,7 +2404,9 @@ function SerialChallengesTab() {
             </div>
           ) : (
             <div className="space-y-4">
-              {serialChallenges.map((challenge) => (
+              {serialChallenges
+                .filter(challenge => !ctfId || challenge.ctfEventId === ctfId)
+                .map((challenge) => (
                 <Card key={challenge.id}>
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
@@ -3739,8 +3764,8 @@ function AnalyticsTab() {
   const [excludeMyIP, setExcludeMyIP] = useState(false);
   const [pathFilter, setPathFilter] = useState("");
   const [ipFilter, setIpFilter] = useState("");
-  const [ctfEventFilter, setCTFEventFilter] = useState<string>("");
-  const [challengeFilter, setChallengeFilter] = useState<string>("");
+  const [ctfEventFilter, setCTFEventFilter] = useState<string>("all");
+  const [challengeFilter, setChallengeFilter] = useState<string>("all");
   const [activeTab, setActiveTab] = useState("overview");
 
   // Fetch page views
@@ -3757,8 +3782,8 @@ function AnalyticsTab() {
       if (excludeMyIP) params.append("excludeMyIP", "true");
       if (pathFilter) params.append("path", pathFilter);
       if (ipFilter) params.append("ipAddress", ipFilter);
-      if (ctfEventFilter) params.append("ctfEventId", ctfEventFilter);
-      if (challengeFilter) params.append("challengeId", challengeFilter);
+      if (ctfEventFilter && ctfEventFilter !== "all") params.append("ctfEventId", ctfEventFilter);
+      if (challengeFilter && challengeFilter !== "all") params.append("challengeId", challengeFilter);
 
       const res = await fetch(`/api/admin/analytics/page-views?${params}`, {
         credentials: "include",
@@ -3782,8 +3807,8 @@ function AnalyticsTab() {
       if (excludeMyIP) params.append("excludeMyIP", "true");
       if (pathFilter) params.append("path", pathFilter);
       if (ipFilter) params.append("ipAddress", ipFilter);
-      if (ctfEventFilter) params.append("ctfEventId", ctfEventFilter);
-      if (challengeFilter) params.append("challengeId", challengeFilter);
+      if (ctfEventFilter && ctfEventFilter !== "all") params.append("ctfEventId", ctfEventFilter);
+      if (challengeFilter && challengeFilter !== "all") params.append("challengeId", challengeFilter);
 
       const res = await fetch(`/api/admin/analytics/page-views/count?${params}`, {
         credentials: "include",
@@ -3807,8 +3832,8 @@ function AnalyticsTab() {
       if (excludeMyIP) params.append("excludeMyIP", "true");
       if (pathFilter) params.append("path", pathFilter);
       if (ipFilter) params.append("ipAddress", ipFilter);
-      if (ctfEventFilter) params.append("ctfEventId", ctfEventFilter);
-      if (challengeFilter) params.append("challengeId", challengeFilter);
+      if (ctfEventFilter && ctfEventFilter !== "all") params.append("ctfEventId", ctfEventFilter);
+      if (challengeFilter && challengeFilter !== "all") params.append("challengeId", challengeFilter);
 
       const res = await fetch(`/api/admin/analytics/error-logs?${params}`, {
         credentials: "include",
@@ -3832,8 +3857,8 @@ function AnalyticsTab() {
       if (excludeMyIP) params.append("excludeMyIP", "true");
       if (pathFilter) params.append("path", pathFilter);
       if (ipFilter) params.append("ipAddress", ipFilter);
-      if (ctfEventFilter) params.append("ctfEventId", ctfEventFilter);
-      if (challengeFilter) params.append("challengeId", challengeFilter);
+      if (ctfEventFilter && ctfEventFilter !== "all") params.append("ctfEventId", ctfEventFilter);
+      if (challengeFilter && challengeFilter !== "all") params.append("challengeId", challengeFilter);
 
       const res = await fetch(`/api/admin/analytics/error-logs/count?${params}`, {
         credentials: "include",
@@ -3856,8 +3881,8 @@ function AnalyticsTab() {
   const clearFilters = () => {
     setPathFilter("");
     setIpFilter("");
-    setCTFEventFilter("");
-    setChallengeFilter("");
+    setCTFEventFilter("all");
+    setChallengeFilter("all");
     setExcludeMyIP(false);
   };
 
@@ -3891,7 +3916,7 @@ function AnalyticsTab() {
                   <SelectValue placeholder="All CTF Events" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All CTF Events</SelectItem>
+                  <SelectItem value="all">All CTF Events</SelectItem>
                   {ctfEvents?.map((ctf) => (
                     <SelectItem key={ctf.id} value={ctf.id.toString()}>
                       {ctf.name}
@@ -3907,7 +3932,7 @@ function AnalyticsTab() {
                   <SelectValue placeholder="All Challenges" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Challenges</SelectItem>
+                  <SelectItem value="all">All Challenges</SelectItem>
                   {challenges?.map((challenge) => (
                     <SelectItem key={challenge.id} value={challenge.id.toString()}>
                       {challenge.name}
@@ -4119,6 +4144,22 @@ function AnalyticsTab() {
 
 // ========== MAIN ADMIN PAGE ==========
 export default function AdminPage() {
+  const [viewMode, setViewMode] = useState<'tabs' | 'challenges' | 'serial-challenges'>('tabs');
+  const [selectedCtfId, setSelectedCtfId] = useState<number | null>(null);
+  const [selectedCtfName, setSelectedCtfName] = useState<string>('');
+
+  const handleViewChallenges = (ctfId: number, ctfName: string, ctfType: string) => {
+    setSelectedCtfId(ctfId);
+    setSelectedCtfName(ctfName);
+    setViewMode(ctfType === 'serial' ? 'serial-challenges' : 'challenges');
+  };
+
+  const handleBackToCtfs = () => {
+    setViewMode('tabs');
+    setSelectedCtfId(null);
+    setSelectedCtfName('');
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground font-sans">
       <Navbar />
@@ -4131,19 +4172,38 @@ export default function AdminPage() {
 
           <Card className="bg-card border-white/5">
             <CardContent className="p-6">
+              {viewMode === 'challenges' && (
+                <div className="mb-6">
+                  <Button variant="ghost" onClick={handleBackToCtfs} className="mb-4">
+                    <ChevronRight className="w-4 h-4 mr-2 rotate-180" />
+                    Back to CTF Events
+                  </Button>
+                  <h2 className="text-2xl font-orbitron font-bold">
+                    Challenges for <span className="text-primary">{selectedCtfName}</span>
+                  </h2>
+                </div>
+              )}
+              {viewMode === 'serial-challenges' && (
+                <div className="mb-6">
+                  <Button variant="ghost" onClick={handleBackToCtfs} className="mb-4">
+                    <ChevronRight className="w-4 h-4 mr-2 rotate-180" />
+                    Back to CTF Events
+                  </Button>
+                  <h2 className="text-2xl font-orbitron font-bold">
+                    Challenges for <span className="text-primary">{selectedCtfName}</span>
+                  </h2>
+                </div>
+              )}
+              {viewMode === 'challenges' ? (
+                <ChallengesTab ctfId={selectedCtfId} />
+              ) : viewMode === 'serial-challenges' ? (
+                <SerialChallengesTab ctfId={selectedCtfId} />
+              ) : (
               <Tabs defaultValue="ctfs">
                 <TabsList className="mb-6">
                   <TabsTrigger value="ctfs">
                     <Trophy className="w-4 h-4 mr-2" />
                     CTF Events
-                  </TabsTrigger>
-                  <TabsTrigger value="challenges">
-                    <Flag className="w-4 h-4 mr-2" />
-                    Challenges
-                  </TabsTrigger>
-                  <TabsTrigger value="serial">
-                    <List className="w-4 h-4 mr-2" />
-                    Serial Challenges
                   </TabsTrigger>
                   <TabsTrigger value="containers">
                     <Container className="w-4 h-4 mr-2" />
@@ -4172,13 +4232,7 @@ export default function AdminPage() {
                 </TabsList>
 
                 <TabsContent value="ctfs">
-                  <CtfEventsTab />
-                </TabsContent>
-                <TabsContent value="challenges">
-                  <ChallengesTab />
-                </TabsContent>
-                <TabsContent value="serial">
-                  <SerialChallengesTab />
+                  <CtfEventsTab onViewChallenges={handleViewChallenges} />
                 </TabsContent>
                 <TabsContent value="containers">
                   <ContainersTab />
@@ -4199,6 +4253,7 @@ export default function AdminPage() {
                   <SettingsTab />
                 </TabsContent>
               </Tabs>
+              )}
             </CardContent>
           </Card>
         </div>
