@@ -95,6 +95,7 @@ app.use((req, res, next) => {
   }
 
   express.json({
+    limit: '100mb', // Allow large file metadata/base64 uploads
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
