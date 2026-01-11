@@ -53,7 +53,14 @@ export function NetworkDesigner({ network, onClose }: Props) {
   useEffect(() => {
     try {
       const graphData = JSON.parse(network.graphData);
-      if (graphData.nodes) setNodes(graphData.nodes);
+      if (graphData.nodes) {
+        // Ensure zones have proper z-index when loading
+        const nodesWithZIndex = graphData.nodes.map((node: Node) => ({
+          ...node,
+          zIndex: node.type === "zone" ? -1 : node.zIndex ?? 1,
+        }));
+        setNodes(nodesWithZIndex);
+      }
       if (graphData.edges) setEdges(graphData.edges);
 
       // Update nodeId counter to prevent ID collisions
@@ -106,6 +113,9 @@ export function NetworkDesigner({ network, onClose }: Props) {
         background: "rgba(255, 255, 255, 0.05)",
         border: "2px dashed rgba(255, 255, 255, 0.2)",
       };
+      newNode.zIndex = -1; // Keep zones in the background
+    } else {
+      newNode.zIndex = 1; // Keep regular nodes above zones
     }
 
     setNodes((nds) => [...nds, newNode]);
@@ -230,6 +240,7 @@ export function NetworkDesigner({ network, onClose }: Props) {
             onConnect={onConnect}
             onNodeClick={onNodeClick}
             nodeTypes={nodeTypes}
+            elevateEdgesOnSelect
             fitView
           >
             <Background />
