@@ -178,6 +178,43 @@ export interface IStorage {
     solves: number;
     lastSolve: Date | null;
   }[]>;
+  getPlayerCtfChallenges(
+    ctfEventId: number,
+    playerId: string | number,
+    isTeamBased: boolean
+  ): Promise<{
+    playerId: string | number;
+    playerName: string;
+    ctfId: number;
+    isTeamBased: boolean;
+    totalChallenges: number;
+    solvedCount: number;
+    totalScore: number;
+    solvedChallenges: Array<{
+      id: number;
+      name: string;
+      category: {
+        id: number;
+        name: string;
+        color: string;
+        icon: string;
+      } | null;
+      points: number;
+      solvedAt: Date;
+      isFirstBlood: boolean;
+    }>;
+    unsolvedChallenges: Array<{
+      id: number;
+      name: string;
+      category: {
+        id: number;
+        name: string;
+        color: string;
+        icon: string;
+      } | null;
+      points: number;
+    }>;
+  }>;
 
   // Platform Settings
   getPlatformSettings(): Promise<PlatformSettingsData>;
@@ -838,6 +875,156 @@ export class DatabaseStorage implements IStorage {
         lastSolve: r.lastSolve,
       }));
     }
+  }
+
+  async getPlayerCtfChallenges(
+    ctfEventId: number,
+    playerId: string | number,
+    isTeamBased: boolean
+  ): Promise<{
+    playerId: string | number;
+    playerName: string;
+    ctfId: number;
+    isTeamBased: boolean;
+    totalChallenges: number;
+    solvedCount: number;
+    totalScore: number;
+    solvedChallenges: Array<{
+      id: number;
+      name: string;
+      category: {
+        id: number;
+        name: string;
+        color: string;
+        icon: string;
+      } | null;
+      points: number;
+      solvedAt: Date;
+      isFirstBlood: boolean;
+    }>;
+    unsolvedChallenges: Array<{
+      id: number;
+      name: string;
+      category: {
+        id: number;
+        name: string;
+        color: string;
+        icon: string;
+      } | null;
+      points: number;
+    }>;
+  }> {
+    // Get all non-hidden challenges for this CTF with category info
+    const allChallenges = await db
+      .select({
+        id: challenges.id,
+        name: challenges.name,
+        points: challenges.points,
+        categoryId: challenges.categoryId,
+        category: {
+          id: categories.id,
+          name: categories.name,
+          color: categories.color,
+          icon: categories.icon,
+        },
+      })
+      .from(challenges)
+      .leftJoin(categories, eq(challenges.categoryId, categories.id))
+      .where(
+        and(
+          eq(challenges.ctfEventId, ctfEventId),
+          eq(challenges.isHidden, false)
+        )
+      );
+
+    // Get solves for this player
+    const playerSolves = await db
+      .select({
+        challengeId: solves.challengeId,
+        points: solves.points,
+        solvedAt: solves.solvedAt,
+        isFirstBlood: solves.isFirstBlood,
+      })
+      .from(solves)
+      .where(
+        and(
+          eq(solves.ctfEventId, ctfEventId),
+          isTeamBased
+            ? eq(solves.teamId, Number(playerId))
+            : eq(solves.userId, String(playerId))
+        )
+      );
+
+    // Build a map of solved challenge IDs for quick lookup
+    const solvedMap = new Map<number, typeof playerSolves[0]>();
+    playerSolves.forEach(solve => {
+      solvedMap.set(solve.challengeId, solve);
+    });
+
+    // Get player/team name
+    let playerName = '';
+    if (isTeamBased) {
+      const team = await this.getTeam(Number(playerId));
+      playerName = team?.name || 'Unknown Team';
+    } else {
+      const user = await this.getUser(String(playerId));
+      playerName = user?.username || 'Unknown User';
+    }
+
+    // Partition challenges into solved and unsolved
+    const solvedChallenges: Array<any> = [];
+    const unsolvedChallenges: Array<any> = [];
+
+    allChallenges.forEach(challenge => {
+      const solve = solvedMap.get(challenge.id);
+      if (solve) {
+        solvedChallenges.push({
+          id: challenge.id,
+          name: challenge.name,
+          category: challenge.category,
+          points: solve.points,
+          solvedAt: solve.solvedAt,
+          isFirstBlood: solve.isFirstBlood,
+        });
+      } else {
+        unsolvedChallenges.push({
+          id: challenge.id,
+          name: challenge.name,
+          category: challenge.category,
+          points: challenge.points,
+        });
+      }
+    });
+
+    // Sort solved challenges by solvedAt DESC (most recent first)
+    solvedChallenges.sort((a, b) =>
+      new Date(b.solvedAt).getTime() - new Date(a.solvedAt).getTime()
+    );
+
+    // Sort unsolved challenges by category name, then points DESC
+    unsolvedChallenges.sort((a, b) => {
+      const categoryA = a.category?.name || 'Unknown';
+      const categoryB = b.category?.name || 'Unknown';
+      if (categoryA !== categoryB) {
+        return categoryA.localeCompare(categoryB);
+      }
+      return b.points - a.points;
+    });
+
+    // Calculate total score
+    const totalScore = playerSolves.reduce((sum, solve) => sum + solve.points, 0);
+
+    return {
+      playerId,
+      playerName,
+      ctfId: ctfEventId,
+      isTeamBased,
+      totalChallenges: allChallenges.length,
+      solvedCount: solvedChallenges.length,
+      totalScore,
+      solvedChallenges,
+      unsolvedChallenges,
+    };
   }
 
   // ========== PLATFORM SETTINGS ==========

@@ -211,6 +211,31 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
+  // Get player's CTF-specific challenge breakdown
+  app.get("/api/ctfs/:ctfId/players/:playerId/challenges", async (req, res) => {
+    try {
+      const ctfId = parseInt(req.params.ctfId);
+      const playerId = req.params.playerId;
+
+      // Get CTF event to determine if team-based
+      const event = await storage.getCtfEvent(ctfId);
+      if (!event) {
+        return res.status(404).json({ error: "CTF event not found" });
+      }
+
+      const result = await storage.getPlayerCtfChallenges(
+        ctfId,
+        playerId,
+        event.isTeamBased
+      );
+
+      res.json(result);
+    } catch (error) {
+      logger.error({ error }, "Failed to fetch player CTF challenges");
+      res.status(500).json({ error: "Failed to fetch player challenges" });
+    }
+  });
+
   // Get score progression over time for a CTF event
   app.get("/api/ctfs/:id/score-progression", async (req, res) => {
     try {

@@ -21,6 +21,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Trophy, Medal, Users, User } from "lucide-react";
+import { PlayerDetailModal } from "@/components/ctf/player-detail-modal";
 import {
   LineChart,
   Line,
@@ -52,6 +53,10 @@ interface LeaderboardData {
 export default function LeaderboardPage() {
   const { ctfId } = useParams<{ ctfId?: string }>();
   const [selectedCtfId, setSelectedCtfId] = useState<string>(ctfId || "");
+  const [selectedPlayer, setSelectedPlayer] = useState<{
+    id: string | number;
+    name: string;
+  } | null>(null);
 
   const { data: ctfs } = useQuery<CtfEvent[]>({
     queryKey: ["/api/ctfs"],
@@ -94,18 +99,33 @@ export default function LeaderboardPage() {
   const topEntries = leaderboard?.entries.slice(0, 10) || [];
 
   // Color palette for different players/teams
+  // Reserve gold/silver/bronze for top 3, then use other colors
   const COLORS = [
-    "#8B1538", // primary red
-    "#FCD34D", // yellow (rank 1)
-    "#9CA3AF", // gray (rank 2)
-    "#D97706", // amber (rank 3)
+    "#FCD34D", // gold (rank 1)
+    "#9CA3AF", // silver (rank 2)
+    "#D97706", // bronze (rank 3)
     "#3B82F6", // blue
     "#10B981", // green
     "#8B5CF6", // purple
     "#F59E0B", // orange
     "#EC4899", // pink
     "#14B8A6", // teal
+    "#8B1538", // burgundy
   ];
+
+  // Create a consistent color mapping based on player rank
+  // This ensures the same player gets the same color in both graph and table
+  const playerColorMap = new Map<string | number, string>();
+  if (scoreProgression?.entries) {
+    scoreProgression.entries.forEach((entry) => {
+      // Find this player in the leaderboard to get their rank
+      const leaderboardEntry = leaderboard?.entries.find(lb => lb.id === entry.id);
+      if (leaderboardEntry && leaderboardEntry.rank <= 10) {
+        // Assign color based on rank (rank-1 because array is 0-indexed)
+        playerColorMap.set(entry.id, COLORS[(leaderboardEntry.rank - 1) % COLORS.length]);
+      }
+    });
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans">
@@ -290,12 +310,12 @@ export default function LeaderboardPage() {
                             }}
                           />
                           <Legend wrapperStyle={{ paddingTop: "20px" }} />
-                          {scoreProgression.entries.map((entry, index) => (
+                          {scoreProgression.entries.map((entry) => (
                             <Line
                               key={entry.id}
                               type="stepAfter"
                               dataKey={entry.name}
-                              stroke={COLORS[index % COLORS.length]}
+                              stroke={playerColorMap.get(entry.id) || "#888"}
                               strokeWidth={2}
                               dot={false}
                               connectNulls={true}
@@ -326,9 +346,9 @@ export default function LeaderboardPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {leaderboard.entries.map((entry, entryIndex) => {
-                        // Get the color from COLORS array for top 10, matching the graph
-                        const entryColor = entryIndex < 10 ? COLORS[entryIndex % COLORS.length] : undefined;
+                      {leaderboard.entries.map((entry) => {
+                        // Get the color from the map to match the graph
+                        const entryColor = entry.rank <= 10 ? COLORS[(entry.rank - 1) % COLORS.length] : undefined;
 
                         return (
                           <TableRow key={entry.id} className="border-white/5">
@@ -356,12 +376,13 @@ export default function LeaderboardPage() {
                                 ) : (
                                   <User className="w-4 h-4 text-muted-foreground" />
                                 )}
-                                <span
-                                  className="font-tech font-semibold"
+                                <button
+                                  onClick={() => setSelectedPlayer({ id: entry.id, name: entry.name })}
+                                  className="font-tech font-semibold hover:text-primary transition-colors cursor-pointer text-left"
                                   style={entryColor ? { color: entryColor } : undefined}
                                 >
                                   {entry.name}
-                                </span>
+                                </button>
                               </div>
                             </TableCell>
                             <TableCell className="text-center">{entry.solves}</TableCell>
@@ -391,6 +412,17 @@ export default function LeaderboardPage() {
       </main>
 
       <Footer />
+
+      {selectedPlayer && activeCtfId && (
+        <PlayerDetailModal
+          open={!!selectedPlayer}
+          onOpenChange={(open) => !open && setSelectedPlayer(null)}
+          ctfId={parseInt(activeCtfId)}
+          playerId={selectedPlayer.id}
+          playerName={selectedPlayer.name}
+          isTeamBased={leaderboard?.isTeamBased ?? false}
+        />
+      )}
     </div>
   );
 }
