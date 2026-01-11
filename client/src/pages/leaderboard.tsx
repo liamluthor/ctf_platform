@@ -310,17 +310,25 @@ export default function LeaderboardPage() {
                             }}
                           />
                           <Legend wrapperStyle={{ paddingTop: "20px" }} />
-                          {scoreProgression.entries.map((entry) => (
-                            <Line
-                              key={entry.id}
-                              type="stepAfter"
-                              dataKey={entry.name}
-                              stroke={playerColorMap.get(entry.id) || "#888"}
-                              strokeWidth={2}
-                              dot={false}
-                              connectNulls={true}
-                            />
-                          ))}
+                          {scoreProgression.entries
+                            .slice()
+                            .sort((a, b) => {
+                              // Sort by leaderboard rank for consistent legend order
+                              const rankA = leaderboard?.entries.find(lb => lb.id === a.id)?.rank ?? 999;
+                              const rankB = leaderboard?.entries.find(lb => lb.id === b.id)?.rank ?? 999;
+                              return rankA - rankB;
+                            })
+                            .map((entry) => (
+                              <Line
+                                key={entry.id}
+                                type="stepAfter"
+                                dataKey={entry.name}
+                                stroke={playerColorMap.get(entry.id) || "#888"}
+                                strokeWidth={2}
+                                dot={false}
+                                connectNulls={true}
+                              />
+                            ))}
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
