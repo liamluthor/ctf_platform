@@ -7,6 +7,7 @@ import {
   timestamp,
   varchar,
   unique,
+  real,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
@@ -1019,3 +1020,96 @@ export const errorLogsRelations = relations(errorLogs, ({ one }) => ({
 
 export type ErrorLog = typeof errorLogs.$inferSelect;
 export type InsertErrorLog = typeof errorLogs.$inferInsert;
+
+// ============================================================================
+// CTFNET: NETWORK TOPOLOGY DESIGNER
+// ============================================================================
+
+// Main networks table
+export const networks = pgTable("networks", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  isActive: boolean("is_active").default(false), // Only one can be active
+  graphData: text("graph_data").notNull(), // JSON: React Flow nodes/edges
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  authorId: varchar("author_id", { length: 36 }).references(() => users.id),
+});
+
+// Individual network devices (for querying)
+export const networkNodes = pgTable("network_nodes", {
+  id: serial("id").primaryKey(),
+  networkId: integer("network_id")
+    .references(() => networks.id, { onDelete: "cascade" })
+    .notNull(),
+  nodeId: text("node_id").notNull(), // React Flow node ID
+  type: text("type").notNull(), // 'vm', 'router', 'switch', 'zone'
+  label: text("label").notNull(),
+
+  // Device configuration (stored as JSON)
+  config: text("config").notNull(), // { dockerImage, services, ports, credentials, interfaces }
+
+  // Position on canvas
+  positionX: real("position_x").notNull(),
+  positionY: real("position_y").notNull(),
+
+  // For zone/container nodes
+  width: real("width"),
+  height: real("height"),
+
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Network connections/segments
+export const networkEdges = pgTable("network_edges", {
+  id: serial("id").primaryKey(),
+  networkId: integer("network_id")
+    .references(() => networks.id, { onDelete: "cascade" })
+    .notNull(),
+  edgeId: text("edge_id").notNull(), // React Flow edge ID
+  sourceNodeId: text("source_node_id").notNull(),
+  targetNodeId: text("target_node_id").notNull(),
+
+  // Network segment info
+  label: text("label"), // e.g., "192.168.1.0/24" or "VLAN 100"
+  subnet: text("subnet"),
+  vlanId: integer("vlan_id"),
+
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Relations
+export const networksRelations = relations(networks, ({ one, many }) => ({
+  author: one(users, {
+    fields: [networks.authorId],
+    references: [users.id],
+  }),
+  nodes: many(networkNodes),
+  edges: many(networkEdges),
+}));
+
+export const networkNodesRelations = relations(networkNodes, ({ one }) => ({
+  network: one(networks, {
+    fields: [networkNodes.networkId],
+    references: [networks.id],
+  }),
+}));
+
+export const networkEdgesRelations = relations(networkEdges, ({ one }) => ({
+  network: one(networks, {
+    fields: [networkEdges.networkId],
+    references: [networks.id],
+  }),
+}));
+
+// Types
+export type Network = typeof networks.$inferSelect;
+export type InsertNetwork = typeof networks.$inferInsert;
+export type NetworkNode = typeof networkNodes.$inferSelect;
+export type NetworkEdge = typeof networkEdges.$inferSelect;
+
+// Validation schemas (Zod)
+export const insertNetworkSchema = createInsertSchema(networks);
+export const insertNetworkNodeSchema = createInsertSchema(networkNodes);
+export const insertNetworkEdgeSchema = createInsertSchema(networkEdges);

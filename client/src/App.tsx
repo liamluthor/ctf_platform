@@ -18,6 +18,7 @@ const ProfilePage = lazy(() => import("./pages/profile"));
 const TeamPage = lazy(() => import("./pages/team"));
 const TeamsListPage = lazy(() => import("./pages/teams-list"));
 const AdminPage = lazy(() => import("./pages/admin"));
+const NetworksPage = lazy(() => import("./pages/networks"));
 const AccountSettingsPage = lazy(() => import("./pages/account-settings"));
 const ForgotPasswordPage = lazy(() => import("./pages/forgot-password"));
 const ResetPasswordPage = lazy(() => import("./pages/reset-password"));
@@ -57,6 +58,11 @@ function Router() {
         <Route path="/admin">
           <ProtectedRoute adminOnly>
             <AdminPage />
+          </ProtectedRoute>
+        </Route>
+        <Route path="/networks">
+          <ProtectedRoute adminOnly>
+            <NetworksPage />
           </ProtectedRoute>
         </Route>
         <Route component={NotFoundPage} />

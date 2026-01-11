@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Flag, Menu, X, User, LogOut, Settings, Trophy, Users } from "lucide-react";
+import { Flag, Menu, X, User, LogOut, Settings, Trophy, Users, Network } from "lucide-react";
 
 const navLinks = [
   { href: "/", label: "Home" },
@@ -113,6 +113,14 @@ export function Navbar() {
                           </a>
                         </Link>
                       </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <Link href="/networks">
+                          <a className="flex items-center gap-2 w-full">
+                            <Network className="w-4 h-4" />
+                            Networks
+                          </a>
+                        </Link>
+                      </DropdownMenuItem>
                     </>
                   )}
                   <DropdownMenuSeparator />
@@ -192,14 +200,24 @@ export function Navbar() {
                       </a>
                     </Link>
                     {(user.role === "admin" || user.role === "owner") && (
-                      <Link href="/admin">
-                        <a
-                          className="block font-tech text-sm py-2"
-                          onClick={() => setMobileMenuOpen(false)}
-                        >
-                          Admin Panel
-                        </a>
-                      </Link>
+                      <>
+                        <Link href="/admin">
+                          <a
+                            className="block font-tech text-sm py-2"
+                            onClick={() => setMobileMenuOpen(false)}
+                          >
+                            Admin Panel
+                          </a>
+                        </Link>
+                        <Link href="/networks">
+                          <a
+                            className="block font-tech text-sm py-2"
+                            onClick={() => setMobileMenuOpen(false)}
+                          >
+                            Networks
+                          </a>
+                        </Link>
+                      </>
                     )}
                     <button
                       onClick={() => {

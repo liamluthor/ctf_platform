@@ -44,6 +44,10 @@ import {
   type InsertPageView,
   type ErrorLog,
   type InsertErrorLog,
+  type Network,
+  type InsertNetwork,
+  type NetworkNode,
+  type NetworkEdge,
   users,
   teams,
   teamMembers,
@@ -68,6 +72,9 @@ import {
   serialStageSolves,
   pageViews,
   errorLogs,
+  networks,
+  networkNodes,
+  networkEdges,
 } from "@shared/schema";
 import { platformSettingsService } from "./services/platform-settings";
 import { db } from "./db";
@@ -300,6 +307,18 @@ export interface IStorage {
   getSerialStageSolves(stageId: number): Promise<SerialStageSolve[]>;
   getUserStageSolve(userId: string, stageId: number): Promise<SerialStageSolve | undefined>;
   getStageFirstBlood(stageId: number): Promise<SerialStageSolve | undefined>;
+
+  // Networks
+  getAllNetworks(): Promise<Network[]>;
+  getNetwork(id: number): Promise<Network | undefined>;
+  createNetwork(network: InsertNetwork): Promise<Network>;
+  updateNetwork(id: number, updates: Partial<InsertNetwork>): Promise<Network | undefined>;
+  deleteNetwork(id: number): Promise<boolean>;
+  setActiveNetwork(id: number): Promise<Network | undefined>;
+  getActiveNetwork(): Promise<Network | undefined>;
+  getNetworkNodes(networkId: number): Promise<NetworkNode[]>;
+  getNetworkEdges(networkId: number): Promise<NetworkEdge[]>;
+  saveNetworkGraph(networkId: number, graphData: { nodes: any[], edges: any[] }): Promise<void>;
 
   sessionStore: session.Store;
 }
@@ -1636,6 +1655,120 @@ export class DatabaseStorage implements IStorage {
 
     const result = await query;
     return result[0]?.count || 0;
+  }
+
+  // ========== NETWORKS ==========
+  async getAllNetworks(): Promise<Network[]> {
+    return await db.select().from(networks).orderBy(desc(networks.updatedAt));
+  }
+
+  async getNetwork(id: number): Promise<Network | undefined> {
+    const result = await db.select()
+      .from(networks)
+      .where(eq(networks.id, id))
+      .limit(1);
+    return result[0];
+  }
+
+  async createNetwork(network: InsertNetwork): Promise<Network> {
+    const result = await db.insert(networks)
+      .values({
+        ...network,
+        graphData: network.graphData || JSON.stringify({ nodes: [], edges: [] }),
+      })
+      .returning();
+    return result[0];
+  }
+
+  async updateNetwork(id: number, updates: Partial<InsertNetwork>): Promise<Network | undefined> {
+    const result = await db.update(networks)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(networks.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteNetwork(id: number): Promise<boolean> {
+    const result = await db.delete(networks)
+      .where(eq(networks.id, id))
+      .returning();
+    return result.length > 0;
+  }
+
+  async setActiveNetwork(id: number): Promise<Network | undefined> {
+    // Transaction: deactivate all, activate one
+    await db.update(networks).set({ isActive: false });
+    const result = await db.update(networks)
+      .set({ isActive: true })
+      .where(eq(networks.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async getActiveNetwork(): Promise<Network | undefined> {
+    const result = await db.select()
+      .from(networks)
+      .where(eq(networks.isActive, true))
+      .limit(1);
+    return result[0];
+  }
+
+  async getNetworkNodes(networkId: number): Promise<NetworkNode[]> {
+    return await db.select()
+      .from(networkNodes)
+      .where(eq(networkNodes.networkId, networkId));
+  }
+
+  async getNetworkEdges(networkId: number): Promise<NetworkEdge[]> {
+    return await db.select()
+      .from(networkEdges)
+      .where(eq(networkEdges.networkId, networkId));
+  }
+
+  async saveNetworkGraph(networkId: number, graphData: { nodes: any[], edges: any[] }): Promise<void> {
+    // Save as JSON blob for fast load
+    await db.update(networks)
+      .set({
+        graphData: JSON.stringify(graphData),
+        updatedAt: new Date(),
+      })
+      .where(eq(networks.id, networkId));
+
+    // Delete existing nodes/edges
+    await db.delete(networkNodes).where(eq(networkNodes.networkId, networkId));
+    await db.delete(networkEdges).where(eq(networkEdges.networkId, networkId));
+
+    // Insert new nodes
+    if (graphData.nodes.length > 0) {
+      await db.insert(networkNodes).values(
+        graphData.nodes.map(node => ({
+          networkId,
+          nodeId: node.id,
+          type: node.type,
+          label: node.data.label,
+          config: JSON.stringify(node.data.config || {}),
+          positionX: node.position.x,
+          positionY: node.position.y,
+          width: node.width,
+          height: node.height,
+        }))
+      );
+    }
+
+    // Insert new edges
+    if (graphData.edges.length > 0) {
+      await db.insert(networkEdges).values(
+        graphData.edges.map(edge => ({
+          networkId,
+          edgeId: edge.id,
+          sourceNodeId: edge.source,
+          targetNodeId: edge.target,
+          label: edge.label,
+          subnet: edge.data?.subnet,
+          vlanId: edge.data?.vlanId,
+        }))
+      );
+    }
   }
 }
 

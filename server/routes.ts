@@ -2988,4 +2988,129 @@ export async function registerRoutes(server: Server, app: Express) {
     }
   });
 
+  // ========== CTFNET - NETWORK TOPOLOGY DESIGNER ==========
+
+  // Get all networks
+  app.get("/api/admin/networks", requireAdmin, async (_req, res) => {
+    try {
+      const networks = await storage.getAllNetworks();
+      res.json(networks);
+    } catch (error) {
+      logger.error({ error }, "Failed to fetch networks");
+      res.status(500).json({ error: "Failed to fetch networks" });
+    }
+  });
+
+  // Get single network with full graph data
+  app.get("/api/admin/networks/:id", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const network = await storage.getNetwork(id);
+      if (!network) {
+        return res.status(404).json({ error: "Network not found" });
+      }
+      res.json(network);
+    } catch (error) {
+      logger.error({ error }, "Failed to fetch network");
+      res.status(500).json({ error: "Failed to fetch network" });
+    }
+  });
+
+  // Create new network
+  app.post("/api/admin/networks", requireAdmin, sanitizeRequestBody, async (req, res) => {
+    try {
+      const networkData = {
+        name: req.body.name,
+        description: req.body.description,
+        graphData: JSON.stringify({ nodes: [], edges: [] }), // Empty graph
+        authorId: req.user.id,
+      };
+
+      const network = await storage.createNetwork(networkData);
+      res.status(201).json(network);
+    } catch (error) {
+      logger.error({ error }, "Failed to create network");
+      res.status(500).json({ error: "Failed to create network" });
+    }
+  });
+
+  // Update network metadata
+  app.patch("/api/admin/networks/:id", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const updates = {
+        name: req.body.name,
+        description: req.body.description,
+      };
+
+      const network = await storage.updateNetwork(id, updates);
+      if (!network) {
+        return res.status(404).json({ error: "Network not found" });
+      }
+      res.json(network);
+    } catch (error) {
+      logger.error({ error }, "Failed to update network");
+      res.status(500).json({ error: "Failed to update network" });
+    }
+  });
+
+  // Save network graph (nodes + edges)
+  app.post("/api/admin/networks/:id/graph", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { nodes, edges } = req.body;
+
+      if (!Array.isArray(nodes) || !Array.isArray(edges)) {
+        return res.status(400).json({ error: "Invalid graph data" });
+      }
+
+      await storage.saveNetworkGraph(id, { nodes, edges });
+      res.json({ success: true });
+    } catch (error) {
+      logger.error({ error }, "Failed to save network graph");
+      res.status(500).json({ error: "Failed to save network graph" });
+    }
+  });
+
+  // Set active network
+  app.post("/api/admin/networks/:id/activate", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const network = await storage.setActiveNetwork(id);
+      if (!network) {
+        return res.status(404).json({ error: "Network not found" });
+      }
+      res.json(network);
+    } catch (error) {
+      logger.error({ error }, "Failed to activate network");
+      res.status(500).json({ error: "Failed to activate network" });
+    }
+  });
+
+  // Get active network
+  app.get("/api/admin/networks/active", requireAdmin, async (_req, res) => {
+    try {
+      const network = await storage.getActiveNetwork();
+      res.json(network || null);
+    } catch (error) {
+      logger.error({ error }, "Failed to fetch active network");
+      res.status(500).json({ error: "Failed to fetch active network" });
+    }
+  });
+
+  // Delete network
+  app.delete("/api/admin/networks/:id", requireAdmin, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const success = await storage.deleteNetwork(id);
+      if (!success) {
+        return res.status(404).json({ error: "Network not found" });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      logger.error({ error }, "Failed to delete network");
+      res.status(500).json({ error: "Failed to delete network" });
+    }
+  });
+
 }
