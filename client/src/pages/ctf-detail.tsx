@@ -8,6 +8,7 @@ import { CountdownTimer } from "@/components/ctf/countdown-timer";
 import { ChallengeCard } from "@/components/ctf/challenge-card";
 import { ChallengeModal } from "@/components/ctf/challenge-modal";
 import { SerialChallengesView } from "@/components/ctf/serial-challenges-view";
+import { PlayerDetailModal } from "@/components/ctf/player-detail-modal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +28,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Clock,
   Users,
+  User,
   Trophy,
   Calendar,
   ChevronLeft,
@@ -65,6 +67,10 @@ export default function CtfDetailPage() {
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [registerDialogOpen, setRegisterDialogOpen] = useState(false);
   const [inviteCode, setInviteCode] = useState("");
+  const [selectedLeaderboardPlayer, setSelectedLeaderboardPlayer] = useState<{
+    id: string | number;
+    name: string;
+  } | null>(null);
 
   const { data: ctf, isLoading: ctfLoading } = useQuery<CtfEvent>({
     queryKey: [`/api/ctfs/${ctfId}`],
@@ -453,7 +459,19 @@ export default function CtfDetailPage() {
                             {entry.rank}
                           </div>
                           <div className="flex-1">
-                            <p className="font-tech">{entry.name}</p>
+                            <div className="flex items-center gap-2">
+                              {leaderboard.isTeamBased ? (
+                                <Users className="w-4 h-4 text-muted-foreground" />
+                              ) : (
+                                <User className="w-4 h-4 text-muted-foreground" />
+                              )}
+                              <button
+                                onClick={() => setSelectedLeaderboardPlayer({ id: entry.id, name: entry.name })}
+                                className="font-tech hover:text-primary transition-colors cursor-pointer text-left"
+                              >
+                                {entry.name}
+                              </button>
+                            </div>
                             <p className="text-xs text-muted-foreground">
                               {entry.solves} solve{entry.solves !== 1 ? "s" : ""}
                             </p>
@@ -560,6 +578,17 @@ export default function CtfDetailPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {selectedLeaderboardPlayer && ctf && (
+        <PlayerDetailModal
+          open={!!selectedLeaderboardPlayer}
+          onOpenChange={(open) => !open && setSelectedLeaderboardPlayer(null)}
+          ctfId={ctfId}
+          playerId={selectedLeaderboardPlayer.id}
+          playerName={selectedLeaderboardPlayer.name}
+          isTeamBased={ctf.isTeamBased}
+        />
+      )}
     </div>
   );
 }
