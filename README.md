@@ -1,4 +1,4 @@
-# raptorsCTF Platform
+# CTF Platform
 
 A competitive Capture The Flag platform built with React, Express, and PostgreSQL.
 
