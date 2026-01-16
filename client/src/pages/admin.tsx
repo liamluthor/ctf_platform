@@ -401,6 +401,16 @@ function CtfEventsTab({ onViewChallenges }: { onViewChallenges: (ctfId: number, 
                   </Button>
                 </TableCell>
                 <TableCell className="text-right">
+                  {!ctf.isPublished && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => window.open(`/ctfs/${ctf.id}`, '_blank')}
+                      title="Preview CTF"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </Button>
+                  )}
                   <Button variant="ghost" size="sm" onClick={() => openEditDialog(ctf)}>
                     <Pencil className="w-4 h-4" />
                   </Button>

@@ -2,7 +2,6 @@ import { useCallback, useState, useEffect } from "react";
 import ReactFlow, {
   Background,
   Controls,
-  MiniMap,
   addEdge,
   useNodesState,
   useEdgesState,
@@ -245,7 +244,6 @@ export function NetworkDesigner({ network, onClose }: Props) {
           >
             <Background />
             <Controls />
-            <MiniMap />
           </ReactFlow>
         </div>
 
