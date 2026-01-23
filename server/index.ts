@@ -12,6 +12,27 @@ import helmet from "helmet";
 const app = express();
 const httpServer = createServer(app);
 
+// Trust proxy - required for secure IP validation behind nginx/reverse proxy
+app.set('trust proxy', 1);
+
+/**
+ * SECURITY: Get validated client IP address
+ * Uses Express's trust proxy mechanism to get the real client IP
+ * This prevents IP spoofing via X-Forwarded-For header injection
+ */
+function getClientIp(req: Request): string {
+  // Express with trust proxy enabled will set req.ip to the correct client IP
+  // based on the leftmost non-trusted IP in X-Forwarded-For
+  const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+
+  // Normalize IPv6 localhost to IPv4
+  if (clientIp === '::1' || clientIp === '::ffff:127.0.0.1') {
+    return '127.0.0.1';
+  }
+
+  return clientIp;
+}
+
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
@@ -74,6 +95,30 @@ const apiLimiter = rateLimit({
 });
 
 app.use(apiLimiter);
+
+// SECURITY: Detect and block IP spoofing attempts
+app.use((req, res, next) => {
+  const xForwardedFor = req.headers['x-forwarded-for'];
+
+  // If X-Forwarded-For contains localhost/private IPs but req.ip doesn't match,
+  // this is likely spoofing
+  if (xForwardedFor && typeof xForwardedFor === 'string') {
+    const ips = xForwardedFor.split(',').map(ip => ip.trim());
+    const suspiciousIps = ['127.0.0.1', 'localhost', '::1'];
+
+    if (ips.some(ip => suspiciousIps.includes(ip)) && req.ip !== '127.0.0.1') {
+      const realIp = getClientIp(req);
+      logger.warn({
+        realIp,
+        xForwardedFor,
+        path: req.path
+      }, "[SECURITY] Detected IP spoofing attempt");
+      return res.status(403).json({ error: "Forbidden" });
+    }
+  }
+
+  next();
+});
 
 app.use((req, res, next) => {
   const contentType = req.headers['content-type'] || '';
@@ -187,7 +232,8 @@ app.use((req, res, next) => {
     const duration = Date.now() - start;
     const statusCode = res.statusCode;
     const path = req.path;
-    const ipAddress = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || 'unknown';
+    // SECURITY: Use validated IP from Express trust proxy, not raw headers
+    const ipAddress = getClientIp(req);
     const userAgent = req.headers['user-agent'] || null;
     const refererHeader = req.headers['referer'] || req.headers['referrer'] || null;
     const referer = Array.isArray(refererHeader) ? refererHeader[0] : refererHeader;
@@ -305,3 +351,6 @@ app.use((req, res, next) => {
     }
   );
 })();
+
+// Export helper functions for use in other modules
+export { getClientIp };
