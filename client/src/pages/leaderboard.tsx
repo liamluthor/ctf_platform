@@ -62,13 +62,11 @@ export default function LeaderboardPage() {
     queryKey: ["/api/ctfs"],
   });
 
-  // Filter to only show active CTFs (current time is between start and end)
-  const activeCtfs = ctfs?.filter((ctf) => {
-    const now = new Date();
-    const startTime = new Date(ctf.startTime);
-    const endTime = new Date(ctf.endTime);
-    return startTime <= now && now <= endTime;
-  }) || [];
+  // Sort CTFs by start time, most recent first
+  const sortedCtfs = ctfs
+    ?.slice()
+    .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
+    || [];
 
   const activeCtfId = selectedCtfId || ctfId;
 
@@ -144,7 +142,7 @@ export default function LeaderboardPage() {
               )}
             </div>
 
-            {activeCtfs && activeCtfs.length > 0 && (
+            {sortedCtfs.length > 0 && (
               <Select
                 value={activeCtfId?.toString()}
                 onValueChange={(value) => setSelectedCtfId(value)}
@@ -153,11 +151,15 @@ export default function LeaderboardPage() {
                   <SelectValue placeholder="Select a competition" />
                 </SelectTrigger>
                 <SelectContent>
-                  {activeCtfs.map((ctf) => (
-                    <SelectItem key={ctf.id} value={ctf.id.toString()}>
-                      {ctf.name}
-                    </SelectItem>
-                  ))}
+                  {sortedCtfs.map((ctf) => {
+                    const now = new Date();
+                    const isActive = new Date(ctf.startTime) <= now && now <= new Date(ctf.endTime);
+                    return (
+                      <SelectItem key={ctf.id} value={ctf.id.toString()}>
+                        {ctf.name}{!isActive && " (ended)"}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             )}
