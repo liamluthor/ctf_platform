@@ -18,6 +18,7 @@ const categories = [
   { name: "Pwn", color: "#EF4444", icon: "terminal" },
   { name: "Reverse", color: "#3B82F6", icon: "cpu" },
   { name: "Forensics", color: "#F59E0B", icon: "search" },
+  { name: "Network", color: "#06B6D4", icon: "network" },
   { name: "Misc", color: "#EC4899", icon: "puzzle" },
 ];
 
@@ -82,6 +83,14 @@ const challengeTemplates = {
     { name: "Disk Forensics", description: "Recover deleted files from this disk image.", points: 200, flag: "flag{d1sk_f0r3ns1cs_r3c0v3r3d}" },
     { name: "Log Analysis", description: "Find the attacker's IP in these server logs.", points: 150, flag: "flag{l0g_4n4lys1s_f0und}" },
     { name: "File Carving", description: "Carve files from this corrupted filesystem.", points: 225, flag: "flag{f1l3_c4rv1ng_succ3ss}" },
+  ],
+  Network: [
+    { name: "Packet Sniffing", description: "Analyze the captured traffic to find credentials sent in plaintext.\n\nDownload: traffic.pcap", points: 100, flag: "flag{pl41nt3xt_cr3ds_l34k3d}" },
+    { name: "DNS Exfiltration", description: "Detect and decode the data exfiltrated via DNS queries.\n\nDownload: dns_capture.pcap", points: 200, flag: "flag{dns_3xf1l_d3t3ct3d}" },
+    { name: "ARP Spoofing", description: "Identify the attacker performing ARP spoofing on the network.\n\nDownload: arp_capture.pcap", points: 175, flag: "flag{4rp_sp00f_c4ught}" },
+    { name: "Firewall Bypass", description: "Find a way to bypass the firewall rules and reach the hidden service.\n\nTarget: 10.0.0.5:8080", points: 250, flag: "flag{f1r3w4ll_byp4ss3d}" },
+    { name: "VLAN Hopping", description: "Escape the restricted VLAN to access the management network.", points: 225, flag: "flag{vl4n_h0pp1ng_succ3ss}" },
+    { name: "Wi-Fi Cracking", description: "Crack the WPA2 handshake to find the network password.\n\nDownload: handshake.cap", points: 200, flag: "flag{w1f1_cr4ck3d_wpa2}" },
   ],
   Misc: [
     { name: "OSINT Challenge", description: "Find information about user @mysteryhacker on social media.", points: 100, flag: "flag{0s1nt_m4st3r_pwn3d}" },

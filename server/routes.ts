@@ -155,11 +155,25 @@ export async function registerRoutes(server: Server, app: Express) {
       const challenges = await storage.getChallengesByCtfEvent(id);
       const categories = await storage.getAllCategories();
 
-      // Get user's solves for this CTF
-      const userSolves = await storage.getSolvesByUser(req.user!.id);
-      const solvedChallengeIds = new Set(
-        userSolves.filter((s) => s.ctfEventId === id).map((s) => s.challengeId)
-      );
+      // Get solves for this CTF — in team-based events, use team solves so
+      // challenges solved by any teammate show as solved for everyone
+      let solvedChallengeIds: Set<number>;
+      if (event.isTeamBased) {
+        const team = await storage.getUserTeam(req.user!.id);
+        if (team) {
+          const teamSolves = await storage.getSolvesByTeam(team.id);
+          solvedChallengeIds = new Set(
+            teamSolves.filter((s) => s.ctfEventId === id).map((s) => s.challengeId)
+          );
+        } else {
+          solvedChallengeIds = new Set();
+        }
+      } else {
+        const userSolves = await storage.getSolvesByUser(req.user!.id);
+        solvedChallengeIds = new Set(
+          userSolves.filter((s) => s.ctfEventId === id).map((s) => s.challengeId)
+        );
+      }
 
       // Filter hidden challenges unless admin, and add solved status
       const visibleChallenges = challenges
@@ -645,12 +659,6 @@ export async function registerRoutes(server: Server, app: Express) {
         return res.status(403).json({ error: "CTF is not currently active" });
       }
 
-      // Check if already solved
-      const existingSolve = await storage.getUserSolveForChallenge(req.user!.id, challengeId);
-      if (existingSolve) {
-        return res.status(400).json({ error: "You have already solved this challenge" });
-      }
-
       // Get user's team if CTF is team-based
       let teamId: number | undefined;
       if (ctfEvent.isTeamBased) {
@@ -659,6 +667,18 @@ export async function registerRoutes(server: Server, app: Express) {
           return res.status(400).json({ error: "You must be in a team to participate in this CTF" });
         }
         teamId = team.id;
+
+        // In team-based CTFs, check if any teammate has already solved this challenge
+        const teamSolve = await storage.getTeamSolveForChallenge(team.id, challengeId);
+        if (teamSolve) {
+          return res.status(400).json({ error: "A teammate has already solved this challenge" });
+        }
+      } else {
+        // In individual CTFs, check if this user has already solved it
+        const existingSolve = await storage.getUserSolveForChallenge(req.user!.id, challengeId);
+        if (existingSolve) {
+          return res.status(400).json({ error: "You have already solved this challenge" });
+        }
       }
 
       // Compare flags (case-insensitive, trimmed)
@@ -893,6 +913,20 @@ export async function registerRoutes(server: Server, app: Express) {
   app.patch("/api/admin/challenges/:id", requireAdmin, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+
+      // If points are being changed, propagate to existing solves
+      if (req.body.points !== undefined) {
+        const existing = await storage.getChallenge(id);
+        if (existing && existing.points !== req.body.points) {
+          await storage.updateSolvesPoints(id, req.body.points);
+          logger.info({
+            challengeId: id,
+            oldPoints: existing.points,
+            newPoints: req.body.points,
+          }, "Propagated point change to existing solves");
+        }
+      }
+
       const challenge = await storage.updateChallenge(id, req.body);
       if (!challenge) {
         return res.status(404).json({ error: "Challenge not found" });
@@ -2202,13 +2236,15 @@ export async function registerRoutes(server: Server, app: Express) {
       // Get base URL from environment
       const baseUrl = process.env.BASE_URL || "http://localhost";
 
-      // Build access URLs for each exposed port
+      // Build access URLs for each exposed port (mode-aware)
+      const containerMode = container.containerMode || "web";
       const accessUrls = portMappings.map(mapping => ({
         port: mapping.containerPort,
         protocol: mapping.protocol,
         subdomain: mapping.subdomain || `Port ${mapping.containerPort}`,
-        // Use wildcard subdomain with subdomain from port mapping
-        url: `https://${mapping.subdomain}.strayerraptors.com`,
+        url: containerMode === "tcp"
+          ? `${mapping.subdomain}.strayerraptors.com:${mapping.hostPort}`
+          : `https://${mapping.subdomain}.strayerraptors.com`,
         // Keep legacy direct port URL for admin panel
         directUrl: `${baseUrl}:${mapping.hostPort}`
       }));
@@ -2217,6 +2253,7 @@ export async function registerRoutes(server: Server, app: Express) {
         hasContainer: true,
         containerName: container.name,
         description: container.description,
+        containerMode,
         status: "running",
         deploymentId: activeDeployment.id,
         instanceName: activeDeployment.instanceName,
