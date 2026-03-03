@@ -337,11 +337,11 @@ export function ChallengeModal({
                               className="flex items-center gap-2 px-3 py-2 bg-primary/10 border border-primary/30 rounded-lg text-sm"
                             >
                               <Terminal className="w-4 h-4 text-primary flex-shrink-0" />
-                              <code className="font-tech flex-1 select-all">ncat {urlInfo.url}</code>
+                              <code className="font-tech flex-1 select-all">nc {urlInfo.url.replace(":", " ")}</code>
                               <button
                                 type="button"
                                 onClick={() => {
-                                  navigator.clipboard.writeText(`ncat ${urlInfo.url}`);
+                                  navigator.clipboard.writeText(`nc ${urlInfo.url.replace(":", " ")}`);
                                 }}
                                 className="p-1 hover:bg-primary/20 rounded transition-colors"
                                 title="Copy to clipboard"
@@ -352,7 +352,7 @@ export function ChallengeModal({
                           ))}
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          Connect using ncat or netcat
+                          Connect using nc or netcat
                         </p>
                       </>
                     ) : (
