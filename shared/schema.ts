@@ -449,6 +449,7 @@ export const containers = pgTable("containers", {
   exposedPorts: text("exposed_ports").notNull().default("[]"), // JSON array: [{"containerPort": 80, "protocol": "tcp"}]
   memoryLimit: integer("memory_limit").default(512), // MB
   cpuLimit: integer("cpu_limit").default(256), // CPU shares
+  containerMode: text("container_mode").notNull().default("web"), // 'web' or 'tcp'
 
   // Metadata
   createdBy: varchar("created_by", { length: 36 }).references(() => users.id),

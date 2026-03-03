@@ -2751,6 +2751,7 @@ function ContainersTab() {
     exposedPorts: "[]",
     memoryLimit: 512,
     cpuLimit: 256,
+    containerMode: "web",
   });
 
   const [portMappings, setPortMappings] = useState<Array<{ containerPort: number | ""; subdomain: string }>>([
@@ -3058,6 +3059,7 @@ function ContainersTab() {
       exposedPorts: "[]",
       memoryLimit: 512,
       cpuLimit: 256,
+      containerMode: "web",
     });
     setPortMappings([{ containerPort: 80, subdomain: "" }]);
   };
@@ -3076,6 +3078,7 @@ function ContainersTab() {
       exposedPorts: container.exposedPorts || "[]",
       memoryLimit: container.memoryLimit || 512,
       cpuLimit: container.cpuLimit || 256,
+      containerMode: container.containerMode || "web",
     });
 
     // Parse existing port mappings from exposedPorts JSON
@@ -3181,6 +3184,27 @@ function ContainersTab() {
                     <SelectItem value="upload">Upload TAR File (Coming Soon)</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="containerMode">Container Mode *</Label>
+                <Select
+                  value={formData.containerMode}
+                  onValueChange={(value) => setFormData({ ...formData, containerMode: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="web">Web (HTTP/HTTPS)</SelectItem>
+                    <SelectItem value="tcp">TCP (ncat/netcat)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {formData.containerMode === "tcp"
+                    ? "TCP mode exposes the port directly for ncat/netcat connections"
+                    : "Web mode proxies traffic through HTTPS via wildcard subdomain"}
+                </p>
               </div>
 
               {formData.deploymentType === "registry" && (

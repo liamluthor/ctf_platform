@@ -39,6 +39,7 @@ async function createAdminUser() {
         { name: "Reverse", color: "#F97316", icon: "cpu", isDefault: true },
         { name: "Forensics", color: "#22C55E", icon: "search", isDefault: true },
         { name: "Misc", color: "#EAB308", icon: "puzzle", isDefault: true },
+        { name: "Network", color: "#06B6D4", icon: "network", isDefault: true },
         { name: "OSINT", color: "#EC4899", icon: "eye", isDefault: true },
       ];
 

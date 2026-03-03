@@ -137,8 +137,10 @@ export async function deployContainer(config: DeploymentConfig): Promise<Deploym
       throw new Error("Failed to get container status after deployment");
     }
 
-    // Build access URL (using wildcard subdomain with instance name)
-    const accessUrl = `https://${instanceName}.strayerraptors.com`;
+    // Build access URL based on container mode
+    const accessUrl = container.containerMode === "tcp"
+      ? `${instanceName}.strayerraptors.com:${portMappings[0].hostPort}`
+      : `https://${instanceName}.strayerraptors.com`;
 
     // Update deployment record with Docker container ID and access URL
     await storage.updateDeployment(deployment.id, {

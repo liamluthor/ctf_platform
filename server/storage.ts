@@ -162,7 +162,9 @@ export interface IStorage {
   getSolvesByTeam(teamId: number): Promise<Solve[]>;
   getSolvesByChallenge(challengeId: number): Promise<Solve[]>;
   getUserSolveForChallenge(userId: string, challengeId: number): Promise<Solve | undefined>;
+  getTeamSolveForChallenge(teamId: number, challengeId: number): Promise<Solve | undefined>;
   getFirstBlood(challengeId: number): Promise<Solve | undefined>;
+  updateSolvesPoints(challengeId: number, points: number): Promise<void>;
 
   // CTF Registrations
   registerForCtf(userId: string, ctfEventId: number, teamId?: number): Promise<CtfRegistration>;
@@ -716,6 +718,22 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
+  async getTeamSolveForChallenge(teamId: number, challengeId: number): Promise<Solve | undefined> {
+    const result = await db
+      .select()
+      .from(solves)
+      .where(and(eq(solves.teamId, teamId), eq(solves.challengeId, challengeId)))
+      .limit(1);
+    return result[0];
+  }
+
+  async updateSolvesPoints(challengeId: number, points: number): Promise<void> {
+    await db
+      .update(solves)
+      .set({ points })
+      .where(eq(solves.challengeId, challengeId));
+  }
+
   async getFirstBlood(challengeId: number): Promise<Solve | undefined> {
     const result = await db
       .select()
@@ -853,7 +871,7 @@ export class DatabaseStorage implements IStorage {
       // Individual leaderboard
       const result = await db
         .select({
-          odyserId: solves.userId,
+          userId: solves.userId,
           username: users.username,
           score: sql<number>`SUM(${solves.points})`.as("score"),
           solveCount: sql<number>`COUNT(*)`.as("solve_count"),
@@ -868,7 +886,7 @@ export class DatabaseStorage implements IStorage {
 
       return result.map((r, i) => ({
         rank: i + 1,
-        id: r.odyserId,
+        id: r.userId,
         name: r.username,
         score: Number(r.score),
         solves: Number(r.solveCount),
