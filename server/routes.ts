@@ -2510,6 +2510,17 @@ export async function registerRoutes(server: Server, app: Express) {
       // Compare flags (case-insensitive, trimmed)
       const isCorrect = flag.trim().toLowerCase() === stage.flag.trim().toLowerCase();
 
+      // Record every attempt so it appears in the admin submissions table
+      await storage.createSerialStageSubmission({
+        stageId,
+        serialChallengeId: serialChallenge.id,
+        ctfEventId: ctfEvent.id,
+        userId,
+        teamId: teamId ?? null,
+        flag: flag.trim(),
+        isCorrect,
+      });
+
       if (!isCorrect) {
         return res.json({ correct: false, message: "Incorrect flag" });
       }
